@@ -629,6 +629,57 @@ describe('Generador (generator.js)', () => {
 });
 
 /* ============================================================
+   Instalable: iconos y manifest
+   ============================================================ */
+describe('Instalable (iconos y manifest)', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+
+  test('la página declara favicon, ícono de iOS y manifest', () => {
+    includes(html, 'assets/favicon.ico', 'falta el favicon .ico');
+    includes(html, 'assets/icon.svg', 'falta el ícono vectorial');
+    includes(html, 'assets/apple-touch-icon.png', 'falta el ícono de iOS');
+    includes(html, 'manifest.webmanifest', 'falta el manifest');
+    includes(html, 'name="theme-color"', 'falta el color de la barra del sistema');
+  });
+
+  test('los archivos de ícono existen y no están vacíos', () => {
+    ['assets/favicon.ico', 'assets/icon.svg', 'assets/icon-maskable.svg',
+     'assets/apple-touch-icon.png', 'assets/icon-192.png', 'assets/icon-512.png'].forEach(rel => {
+      const file = path.join(ROOT, rel);
+      assert(fs.existsSync(file), `falta ${rel}`);
+      assert(fs.statSync(file).size > 200, `${rel} está vacío`);
+    });
+  });
+
+  test('el manifest es JSON válido y declara lo necesario', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.webmanifest'), 'utf8'));
+    equal(manifest.name.includes('Postinga'), true, 'debería nombrar al producto');
+    equal(manifest.short_name, 'Postinga');
+    equal(manifest.display, 'standalone', 'debería abrirse como app');
+    equal(manifest.start_url, './', 'debería arrancar en la raíz relativa');
+    equal(manifest.scope, './', 'el alcance debe ser relativo para que funcione en GitHub Pages');
+    assert(Array.isArray(manifest.icons) && manifest.icons.length >= 2, 'deberían declararse íconos');
+    const sizes = manifest.icons.map(icon => icon.sizes).join(' ');
+    includes(sizes, '192x192');
+    includes(sizes, '512x512');
+    const purposes = manifest.icons.map(icon => icon.purpose).join(' ');
+    includes(purposes, 'maskable', 'falta un ícono maskable para Android');
+    manifest.icons.forEach(icon => {
+      assert(fs.existsSync(path.join(ROOT, icon.src)), `el manifest apunta a ${icon.src}, que no existe`);
+    });
+  });
+
+  test('el manifest funciona en una subcarpeta (GitHub Pages)', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.webmanifest'), 'utf8'));
+    notIncludes(manifest.start_url, '/postinga', 'no debería tener la ruta absoluta del repo');
+    assert(!String(manifest.start_url).startsWith('/'), 'start_url debería ser relativo');
+    manifest.icons.forEach(icon => {
+      assert(!String(icon.src).startsWith('/'), `el ícono ${icon.src} debería ser relativo`);
+    });
+  });
+});
+
+/* ============================================================
    Descarga directa
    ============================================================ */
 describe('Descarga directa (extract.js)', () => {
@@ -852,6 +903,9 @@ describe('Interfaz (css/style.css)', () => {
     const css = fs.readFileSync(path.join(ROOT, 'css', 'style.css'), 'utf8');
     const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
     includes(html, 'id="bSideToggle"', 'falta el botón de plegado');
+    includes(html, 'id="themeToggle"', 'falta el selector de tema en la barra');
+    equal((html.match(/id="themeToggle"/g) || []).length, 1, 'debería haber un solo selector de tema en la barra');
+    includes(app, 'setAppearance', 'debería existir la función que cambia el tema');
     includes(css, 'sidebar-collapsed', 'falta el estado plegado en CSS');
     includes(app, 'sidebarCollapsed', 'la preferencia debería persistirse');
   });

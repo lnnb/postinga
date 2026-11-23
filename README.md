@@ -143,12 +143,21 @@ duplicarlo, actualizarlo, eliminarlo o exportar todo como respaldo.
 Con una clave gratuita de Google, el post se **reescribe y traduce al español** con el tono que
 elijas: *clásico*, *gamer* o *profesional*. Si la IA falla, el post se completa igual.
 
-### 🌗 Se ve como una app de verdad
+### 🌗 Claro u oscuro, con un clic
 
-Tema claro u oscuro automático, vista previa de escritorio y de teléfono, biblioteca plegable
-para ganar espacio, y atajos de teclado para no soltar el mouse.
+El selector de tema está siempre a la vista en la barra superior: pasás de claro a oscuro sin
+entrar a ningún menú, y queda recordado.
+
+Vista previa de escritorio y de teléfono, biblioteca plegable para ganar espacio, y atajos de
+teclado para no soltar el mouse.
 
 <img src="docs/img/movil.png" width="230" alt="Postinga en el teléfono">
+
+### 📲 Se instala como una app
+
+Desde el navegador del teléfono podés **agregarla a la pantalla de inicio**: queda con su ícono,
+abre a pantalla completa y funciona como cualquier otra app. En la computadora también se puede
+instalar desde el ícono de instalación de la barra de direcciones.
 
 <details>
 <summary><b>Ver los atajos</b></summary>

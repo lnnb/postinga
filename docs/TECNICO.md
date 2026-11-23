@@ -23,6 +23,8 @@ server.js             Servidor local + lector de URLs (sin dependencias)
 tests/run.js          Tests automatizados
 tests/fixtures/       Páginas de ejemplo para los tests
 docs/                 Este documento y las capturas del README
+manifest.webmanifest  Datos de la app instalable (PWA)
+assets/               Ícono vectorial, favicon.ico multtamaño y PNG para iOS/Android
 ```
 
 ### Orden de carga
@@ -161,6 +163,26 @@ Para agregar un servicio:
 ```
 
 Si `convert` devuelve una cadena vacía, significa "ya está en su forma directa".
+
+---
+
+## App instalable (PWA)
+
+`manifest.webmanifest` declara el nombre, los íconos y el modo `standalone`. El `start_url` y el
+`scope` son relativos (`./`) para que funcione igual en la raíz o en una subcarpeta como
+`/postinga/`.
+
+Los íconos se generan a partir de `assets/icon-maskable.svg` (fondo completo, con la letra
+dentro de la zona segura del 80% que exige Android):
+
+| Archivo | Uso |
+| --- | --- |
+| `favicon.ico` | Pestaña del navegador, en 16, 32 y 48 px |
+| `icon.svg` | Navegadores modernos (vectorial) |
+| `icon-192.png` · `icon-512.png` | Android y escritorio |
+| `apple-touch-icon.png` | Pantalla de inicio de iOS, 180 px |
+
+Para regenerarlos: renderizar el SVG a 512 px y exportar los tamaños con Pillow.
 
 ---
 

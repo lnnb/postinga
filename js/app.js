@@ -192,16 +192,26 @@ function applyAppearance() {
   const resolved = resolvedAppearance();
   document.documentElement.dataset.appearance = resolved;
   document.documentElement.style.colorScheme = resolved;
-  const use = $('#appearanceIcon use');
-  if (use) use.setAttribute('href', resolved === 'dark' ? '#i-moon' : '#i-sun');
-  const button = $('#bAppearance');
-  if (button) {
-    button.title = resolved === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro';
-    button.setAttribute('aria-label', button.title);
-  }
+
+  // El selector de la barra muestra lo que estás viendo ahora.
+  document.querySelectorAll('#themeToggle [data-appearance-choice]').forEach(button => {
+    const active = button.dataset.appearanceChoice === resolved;
+    button.classList.toggle('on', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+
+  // En Ajustes se muestra la preferencia, que también puede ser automática.
   document.querySelectorAll('#appearanceSeg [data-appearance-choice]').forEach(choice => {
     choice.classList.toggle('on', choice.dataset.appearanceChoice === prefs.appearance);
   });
+}
+
+function setAppearance(choice) {
+  if (choice !== 'light' && choice !== 'dark') return;
+  if (resolvedAppearance() === choice && prefs.appearance === choice) return;
+  prefs.appearance = choice;
+  savePrefs();
+  applyAppearance();
 }
 
 function savePrefs() {
@@ -2442,10 +2452,8 @@ function bindEvents() {
   });
 
   /* --- Barra superior / vista previa --- */
-  $('#bAppearance').addEventListener('click', () => {
-    prefs.appearance = resolvedAppearance() === 'dark' ? 'light' : 'dark';
-    savePrefs();
-    applyAppearance();
+  document.querySelectorAll('#themeToggle [data-appearance-choice]').forEach(button => {
+    button.addEventListener('click', () => setAppearance(button.dataset.appearanceChoice));
   });
   $('#bSave').addEventListener('click', () => {
     if (!saveCurrentToLibrary(false)) toast('Agregá contenido antes de guardar', { type: 'warn' });

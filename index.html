@@ -6,7 +6,14 @@
   <meta name="color-scheme" content="light dark">
   <meta name="description" content="Postinga: pegás un link o un texto, se autocompletan todos los campos y copiás el HTML listo para publicar.">
   <title>Postinga — Editor inteligente de posts</title>
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-title" content="Postinga">
+  <meta name="application-name" content="Postinga">
   <link rel="stylesheet" href="css/style.css">
   <script>
     // Evita el destello de tema al cargar.
@@ -156,9 +163,14 @@
             <svg><use href="#i-sparkle"/></svg>
             <span class="tool-label">Autocompletar</span>
           </button>
-          <button class="icon-btn" id="bAppearance" title="Cambiar apariencia" aria-label="Cambiar apariencia">
-            <svg id="appearanceIcon"><use href="#i-sun"/></svg>
-          </button>
+          <div class="seg icon-seg theme-toggle" id="themeToggle" role="group" aria-label="Tema de la interfaz">
+            <button type="button" data-appearance-choice="light" title="Tema claro" aria-label="Tema claro">
+              <svg><use href="#i-sun"/></svg>
+            </button>
+            <button type="button" data-appearance-choice="dark" title="Tema oscuro" aria-label="Tema oscuro">
+              <svg><use href="#i-moon"/></svg>
+            </button>
+          </div>
           <button class="icon-btn" id="bSave" title="Guardar en la biblioteca (⌘S)" aria-label="Guardar en la biblioteca">
             <svg><use href="#i-bookmark"/></svg>
           </button>
