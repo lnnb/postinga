@@ -28,3 +28,6 @@ desktop.ini
 
 # Respaldos locales de la biblioteca
 tpost-biblioteca-*.json
+
+# Helper local para subir cambios (específico de esta máquina)
+Subir a GitHub.command
