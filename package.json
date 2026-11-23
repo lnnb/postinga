@@ -1,0 +1,22 @@
+{
+  "name": "tpost-studio",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Editor inteligente de posts: pegás un link o un texto, se autocompletan todos los campos y copiás el HTML listo para publicar.",
+  "scripts": {
+    "start": "node server.js",
+    "open": "node server.js --open",
+    "test": "node tests/run.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "taringa",
+    "editor",
+    "html",
+    "posts",
+    "autocompletar"
+  ],
+  "license": "MIT"
+}

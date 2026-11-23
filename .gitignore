@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Dependencias (el proyecto no tiene, pero por si acaso)
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# Variables de entorno y claves
+.env
+.env.*
+*.pem
+*.key
+
+# Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sistema
+Thumbs.db
+desktop.ini
+
+# Respaldos locales de la biblioteca
+tpost-biblioteca-*.json
