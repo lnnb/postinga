@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="assets/icon.svg" width="86" height="86" alt="T! POST Studio">
+<img src="assets/icon.svg" width="86" height="86" alt="Postinga">
 
-# T! POST Studio
+# Postinga
 
 **Pegás un link. El post se escribe solo.**
 
@@ -42,7 +42,7 @@ Armar un post largo es repetitivo: buscás el título, recortás la descripción
 armás la lista de características, averiguás los requisitos, juntás los links de descarga…
 y lo repetís igual para el próximo.
 
-|  | A mano | Con T! POST Studio |
+|  | A mano | Con Postinga |
 | --- | --- | --- |
 | Armar un post | 20–40 minutos | **30 segundos** |
 | Campos a completar | 20 o más | **ninguno** |
@@ -148,7 +148,7 @@ elijas: *clásico*, *gamer* o *profesional*. Si la IA falla, el post se completa
 Tema claro u oscuro automático, vista previa de escritorio y de teléfono, biblioteca plegable
 para ganar espacio, y atajos de teclado para no soltar el mouse.
 
-<img src="docs/img/movil.png" width="230" alt="T! POST Studio en el teléfono">
+<img src="docs/img/movil.png" width="230" alt="Postinga en el teléfono">
 
 <details>
 <summary><b>Ver los atajos</b></summary>
@@ -217,14 +217,14 @@ internet.
 
 <div align="center">
 
-### [▶ Abrir T! POST Studio](https://lnnb.github.io/postinga/)
+### [▶ Abrir Postinga](https://lnnb.github.io/postinga/)
 
 Sin instalar nada. Se abre y funciona.
 
 <br>
 
 <sub>¿Preferís tenerlo en tu computadora? Descargá el proyecto y hacé doble clic en
-<b>Iniciar T! POST.command</b>. Así además analiza los links de forma más confiable.</sub>
+<b>Iniciar Postinga.command</b>. Así además analiza los links de forma más confiable.</sub>
 
 </div>
 

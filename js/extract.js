@@ -1,5 +1,5 @@
 /**
- * T! POST Studio
+ * Postinga
  * Capa de extracción: HTML → texto/meta, markdown → datos y lectura de URLs
  * con varios lectores de respaldo.
  */

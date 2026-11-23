@@ -4,15 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <meta name="description" content="T! POST Studio: pegás un link o un texto, se autocompletan todos los campos y copiás el HTML listo para publicar.">
-  <title>T! POST Studio — Editor inteligente de posts</title>
+  <meta name="description" content="Postinga: pegás un link o un texto, se autocompletan todos los campos y copiás el HTML listo para publicar.">
+  <title>Postinga — Editor inteligente de posts</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/style.css">
   <script>
     // Evita el destello de tema al cargar.
     (function () {
       try {
-        var prefs = JSON.parse(localStorage.getItem('tpost.prefs.v1') || '{}');
+        var raw = localStorage.getItem('postinga.prefs.v1') || localStorage.getItem('tpost.prefs.v1') || '{}';
+        var prefs = JSON.parse(raw);
         var mode = prefs.appearance || 'auto';
         var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
         var resolved = mode === 'auto' ? (dark ? 'dark' : 'light') : mode;
@@ -85,8 +86,8 @@
     <aside class="sidebar" id="sidebar" aria-label="Biblioteca de posts">
       <div class="side-top">
         <div class="brand">
-          <span class="brand-mark">T!</span>
-          <span class="brand-word">POST <em>Studio</em></span>
+          <span class="brand-mark">P</span>
+          <span class="brand-word">Postinga</span>
         </div>
         <button class="icon-btn sidebar-close" id="bSideClose" aria-label="Cerrar menú">
           <svg><use href="#i-x"/></svg>

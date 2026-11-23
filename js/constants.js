@@ -1,5 +1,5 @@
 /**
- * T! POST Studio
+ * Postinga
  * Constantes, paletas de salida, plantillas y utilidades compartidas.
  * Sin dependencias: este archivo se carga como script clásico.
  */

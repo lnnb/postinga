@@ -187,9 +187,12 @@ Todo se guarda en `localStorage` del navegador:
 
 | Clave | Contenido |
 | --- | --- |
-| `tpost.draft.v1` | El post que estás editando |
-| `tpost.library.v1` | La biblioteca de posts guardados |
-| `tpost.prefs.v1` | Apariencia, tono, motor, destino, biblioteca plegada |
-| `tpost.keys.v1` | Claves de IA (solo se envían al proveedor elegido) |
+| `postinga.draft.v1` | El post que estás editando |
+| `postinga.library.v1` | La biblioteca de posts guardados |
+| `postinga.prefs.v1` | Apariencia, tono, motor, destino, biblioteca plegada |
+| `postinga.keys.v1` | Claves de IA (solo se envían al proveedor elegido) |
+
+El proyecto se llamaba `tpost` antes de llamarse Postinga. Al arrancar se copian las claves
+viejas (`tpost.*`) a las nuevas si todavía no existen, así nadie pierde su biblioteca.
 
 No hay backend ni cuentas. La biblioteca se puede exportar e importar como JSON.

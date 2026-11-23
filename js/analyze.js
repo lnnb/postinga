@@ -1,5 +1,5 @@
 /**
- * T! POST Studio
+ * Postinga
  * Analizador heurístico local.
  * Toma un texto, un HTML o el resultado de un lector de URLs y arma
  * una estructura completa de post: portada, cuerpo, características,

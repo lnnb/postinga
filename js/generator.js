@@ -1,5 +1,5 @@
 /**
- * T! POST Studio
+ * Postinga
  * Generador del HTML final del post.
  *
  * Reglas de oro:

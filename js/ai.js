@@ -1,5 +1,5 @@
 /**
- * T! POST Studio
+ * Postinga
  * Motores de redacción con IA (opcionales): Google Gemini y cualquier
  * endpoint compatible con OpenAI (OpenAI, Ollama, LM Studio, proxies).
  *

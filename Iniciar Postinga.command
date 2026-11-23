@@ -1,11 +1,11 @@
 #!/bin/bash
-# T! POST Studio — lanzador para macOS
+# Postinga — lanzador para macOS
 # Doble clic sobre este archivo para abrir el editor en el navegador.
 
 cd "$(dirname "$0")" || exit 1
 
 echo ""
-echo "  T! POST Studio"
+echo "  Postinga"
 echo "  ─────────────────────────────────────────────"
 echo ""
 

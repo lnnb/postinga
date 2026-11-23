@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * T! POST Studio — servidor local sin dependencias.
+ * Postinga — servidor local sin dependencias.
  *
  * Sirve la aplicación y expone un lector de URLs (/api/fetch) que evita
  * los bloqueos de CORS y permite extraer metadatos con un User-Agent real.
@@ -403,7 +403,7 @@ function requestHandler(req, res) {
   if (requestUrl.pathname === '/api/health') {
     return sendJson(res, 200, {
       ok: true,
-      name: 'tpost-reader',
+      name: 'postinga-reader',
       version: VERSION,
       node: process.version
     });
@@ -458,7 +458,7 @@ function start(port, attempt = 0) {
     const url = `http://${HOST}:${port}`;
     console.log('');
     console.log('  ┌──────────────────────────────────────────────┐');
-    console.log('  │  T! POST Studio                              │');
+    console.log('  │  Postinga                                    │');
     console.log('  └──────────────────────────────────────────────┘');
     console.log('');
     console.log(`  Local:     ${url}`);

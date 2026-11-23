@@ -27,7 +27,7 @@ Thumbs.db
 desktop.ini
 
 # Respaldos locales de la biblioteca
-tpost-biblioteca-*.json
+postinga-biblioteca-*.json
 
 # Helper local para subir cambios (específico de esta máquina)
 Subir a GitHub.command

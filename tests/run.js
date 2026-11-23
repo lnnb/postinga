@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * T! POST Studio — tests automatizados
+ * Postinga — tests automatizados
  *
  * Ejecutar:  npm test   (o)  node tests/run.js
  *
@@ -1046,7 +1046,7 @@ describeAsync('Servidor (server.js)', async () => {
     await testAsync('sirve la aplicación y todos sus recursos', async () => {
       const index = await httpRequest(base, 'GET', '/');
       equal(index.status, 200);
-      includes(index.body, 'T! POST Studio');
+      includes(index.body, 'Postinga');
       const assets = ['css/style.css', 'js/constants.js', 'js/extract.js', 'js/analyze.js', 'js/generator.js', 'js/ai.js', 'js/app.js', 'assets/icon.svg'];
       for (const asset of assets) {
         const res = await httpRequest(base, 'GET', '/' + asset);

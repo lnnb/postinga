@@ -1,5 +1,5 @@
 /**
- * T! POST Studio
+ * Postinga
  * Controlador de la interfaz: estado, biblioteca, captura inteligente,
  * vista previa, ajustes, atajos y publicación.
  */
@@ -10,12 +10,35 @@
    Persistencia y estado
    ============================================================ */
 const STORAGE = {
-  draft: 'tpost.draft.v1',
-  library: 'tpost.library.v1',
-  prefs: 'tpost.prefs.v1',
-  keys: 'tpost.keys.v1',
+  draft: 'postinga.draft.v1',
+  library: 'postinga.library.v1',
+  prefs: 'postinga.prefs.v1',
+  keys: 'postinga.keys.v1',
   legacy: 'taringa-editor-v1'
 };
+
+// El proyecto se llamaba tpost antes de llamarse Postinga: se copian los datos
+// guardados para que nadie pierda su biblioteca ni sus claves.
+const RENAMED_KEYS = {
+  'postinga.draft.v1': 'tpost.draft.v1',
+  'postinga.library.v1': 'tpost.library.v1',
+  'postinga.prefs.v1': 'tpost.prefs.v1',
+  'postinga.keys.v1': 'tpost.keys.v1'
+};
+
+function migrateStorage() {
+  Object.keys(RENAMED_KEYS).forEach(key => {
+    try {
+      if (localStorage.getItem(key) !== null) return;
+      const previous = localStorage.getItem(RENAMED_KEYS[key]);
+      if (previous !== null) localStorage.setItem(key, previous);
+    } catch (error) {
+      // Si el navegador bloquea el almacenamiento, se sigue sin migrar.
+    }
+  });
+}
+
+migrateStorage();
 
 const DEFAULT_PREFS = {
   appearance: 'auto',
@@ -314,7 +337,7 @@ function renderTitlebar() {
   $('#docTitle').textContent = title;
   $('#docSource').textContent = host || 'Sin fuente';
   $('#docTime').textContent = savedAt ? `Guardado ${relativeTime(savedAt)}` : 'Borrador local';
-  document.title = `${title} · T! POST Studio`;
+  document.title = `${title} · Postinga`;
   $('#libCount').textContent = String(library.length);
   $('#engineChipText').textContent = aiEngineLabel(prefs.engine);
   $('#engineChip').title = `Motor: ${aiEngineLabel(prefs.engine)}. Clic para cambiar.`;
@@ -1947,7 +1970,7 @@ async function checkReader(force) {
    ============================================================ */
 function exportLibrary() {
   const payload = {
-    app: 'tpost-studio',
+    app: 'postinga',
     version: 2,
     exportedAt: new Date().toISOString(),
     prefs: { ...prefs },
@@ -1958,7 +1981,7 @@ function exportLibrary() {
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   const date = new Date().toISOString().slice(0, 10);
-  link.download = `tpost-biblioteca-${date}.json`;
+  link.download = `postinga-biblioteca-${date}.json`;
   document.body.appendChild(link);
   link.click();
   link.remove();
