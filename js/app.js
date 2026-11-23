@@ -27,7 +27,8 @@ const DEFAULT_PREFS = {
   openaiBase: 'https://api.openai.com/v1',
   openaiModel: 'gpt-4o-mini',
   targetName: 'Taringa!',
-  targetUrl: 'https://www.taringa.net'
+  targetUrl: 'https://www.taringa.net',
+  sidebarCollapsed: false
 };
 
 const DEFAULT_KEYS = { gemini: '', openai: '' };
@@ -101,7 +102,8 @@ function loadInitialPost() {
   if (draft && typeof draft === 'object' && (draft.hero || draft.info)) return normalizePostState(draft);
   const legacy = readJson(STORAGE.legacy, null);
   if (legacy && typeof legacy === 'object' && (legacy.hero || legacy.info)) return normalizePostState(legacy);
-  return normalizePostState(DEF);
+  // Primer arranque: post vacío con los separadores clásicos, listo para pegar.
+  return normalizePostState(BLANK);
 }
 
 let prefs = loadPrefs();
@@ -181,6 +183,34 @@ function applyAppearance() {
 
 function savePrefs() {
   writeJson(STORAGE.prefs, prefs);
+}
+
+const WIDE_QUERY = '(min-width: 1181px)';
+
+function isWideLayout() {
+  return window.matchMedia(WIDE_QUERY).matches;
+}
+
+/** Pliega o muestra la biblioteca según la preferencia y el ancho. */
+function applySidebarState() {
+  const collapsed = Boolean(prefs.sidebarCollapsed) && isWideLayout();
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+
+  const button = $('#bSideToggle');
+  if (button) {
+    const label = collapsed ? 'Mostrar la biblioteca' : 'Ocultar la biblioteca';
+    button.setAttribute('aria-pressed', String(collapsed));
+    button.title = label + ' (⌘\\)';
+    button.setAttribute('aria-label', label);
+  }
+}
+
+function toggleSidebarCollapsed() {
+  prefs.sidebarCollapsed = !prefs.sidebarCollapsed;
+  savePrefs();
+  applySidebarState();
+  const label = prefs.sidebarCollapsed ? 'Biblioteca oculta' : 'Biblioteca visible';
+  toast(label, { duration: 1800 });
 }
 
 function saveKeys() {
@@ -2070,8 +2100,29 @@ function clearAllData() {
 }
 
 /* ============================================================
-   Nuevo / guardar / abrir
+   Nuevo / ejemplo / guardar / abrir
    ============================================================ */
+function loadExample() {
+  // El ejemplo usa el diseño actual para no cambiar el tema de golpe.
+  const design = { theme: S.theme, accent: S.accent, sep: (S.sep || []).slice(0, 3) };
+  S = normalizePostState({ ...clone(DEF), id: uid('post'), ...design });
+  state.summary = null;
+  state.captureMin = false;
+  state.alert = null;
+  state.pendingSourceUrl = '';
+  state.panelOpen = { hero: true, info: true, items: true, specs: false, links: true, design: false };
+  captureInput.value = '';
+  S.locked = { hero: false, info: false, items: false, specs: false, links: false };
+  markDirty();
+  renderForm();
+  renderPreview();
+  renderTitlebar();
+  renderCapture();
+  persistDraftNow();
+  setMobileView('editor');
+  toast('Ejemplo cargado · ⌘N para empezar de cero', { duration: 3600 });
+}
+
 function newPost() {
   if (state.dirty) saveCurrentToLibrary(true);
   const design = { theme: S.theme, accent: S.accent, sep: S.sep.slice(0, 3) };
@@ -2346,6 +2397,9 @@ function bindEvents() {
 
   /* --- Navegación --- */
   $('#bNew').addEventListener('click', newPost);
+  const exampleButton = $('#bLoadExample');
+  if (exampleButton) exampleButton.addEventListener('click', loadExample);
+  $('#bSideToggle').addEventListener('click', toggleSidebarCollapsed);
   $('#bMenu').addEventListener('click', openSidebar);
   $('#bSideClose').addEventListener('click', () => closeSidebar());
   $('#scrim').addEventListener('click', () => closeSidebar());
@@ -2549,7 +2603,8 @@ function bindEvents() {
       if (!state.analyzing) runCapture();
     } else if (key === '\\') {
       event.preventDefault();
-      if (document.body.classList.contains('sidebar-open')) closeSidebar();
+      if (isWideLayout()) toggleSidebarCollapsed();
+      else if (document.body.classList.contains('sidebar-open')) closeSidebar();
       else openSidebar();
     }
   });
@@ -2571,6 +2626,7 @@ function bindEvents() {
 
   window.addEventListener('resize', () => {
     if (!window.matchMedia('(max-width: 900px)').matches) closeSidebar(true);
+    applySidebarState();
   });
 }
 
@@ -2579,8 +2635,8 @@ function bindEvents() {
    ============================================================ */
 function init() {
   applyAppearance();
+  applySidebarState();
   captureInput.value = '';
-  if (S.id === 'demo-sylenth1') savedAt = 0;
   renderForm();
   renderLibrary();
   renderTitlebar();

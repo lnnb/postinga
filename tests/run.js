@@ -836,6 +836,26 @@ describe('Interfaz (css/style.css)', () => {
     assert(lockAt < bodyAt, 'el aviso de candados debe ir antes del cuerpo colapsable');
   });
 
+  test('la app arranca vacía, no con el ejemplo cargado', () => {
+    const app = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8');
+    const start = app.indexOf('function loadInitialPost');
+    const end = app.indexOf('let prefs = loadPrefs()');
+    assert(start !== -1 && end > start, 'no se encontró loadInitialPost');
+    const body = app.slice(start, end);
+    notIncludes(body, 'DEF', 'el arranque no debería cargar el ejemplo');
+    includes(body, 'BLANK', 'debería arrancar con el post vacío');
+    includes(app, 'loadExample', 'el ejemplo debería poder cargarse a pedido');
+  });
+
+  test('la biblioteca se puede plegar en escritorio', () => {
+    const app = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8');
+    const css = fs.readFileSync(path.join(ROOT, 'css', 'style.css'), 'utf8');
+    const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    includes(html, 'id="bSideToggle"', 'falta el botón de plegado');
+    includes(css, 'sidebar-collapsed', 'falta el estado plegado en CSS');
+    includes(app, 'sidebarCollapsed', 'la preferencia debería persistirse');
+  });
+
   test('cada sección bloqueable tiene su candado', () => {
     const app = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8');
     includes(app, 'data-lock=', 'las cabeceras deberían traer el botón de candado');

@@ -739,6 +739,33 @@ kbd {
   display: none;
 }
 
+.only-wide {
+  display: none;
+}
+
+/* En escritorio, la biblioteca se puede plegar para ganar espacio de edición */
+@media (min-width: 1181px) {
+  .only-wide {
+    display: inline-grid;
+  }
+
+  .sidebar {
+    transition: margin-left 0.32s var(--ease);
+  }
+
+  body.sidebar-collapsed .sidebar {
+    margin-left: calc(-1 * var(--sidebar-w));
+  }
+
+  body.sidebar-collapsed .stage {
+    grid-template-columns: minmax(420px, 540px) minmax(0, 1fr);
+  }
+
+  .stage {
+    transition: grid-template-columns 0.32s var(--ease);
+  }
+}
+
 /* --------------------------------------------------------------------------
    Botones, iconos, controles
    -------------------------------------------------------------------------- */
@@ -2396,6 +2423,10 @@ button:focus-visible,
   line-height: 1.6;
 }
 
+.preview-empty .example-btn {
+  margin-top: 15px;
+}
+
 .preview-foot {
   display: flex;
   flex: 0 0 43px;
@@ -3216,6 +3247,7 @@ body[data-preview="code"] .code-wrap {
     bottom: 0;
     left: 0;
     width: 282px;
+    margin-left: 0;
     transform: translateX(-104%);
     box-shadow: var(--shadow-2);
     transition: transform 0.3s var(--ease);
