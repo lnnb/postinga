@@ -488,17 +488,20 @@ function looksLikeSentence(name) {
   return wordCount(text) > 5;
 }
 
+/* Una línea de ficha es corta y sin conectores: "Memoria: 4 GB de RAM".
+   Una frase larga que menciona "60 MB" es prosa, no una ficha. */
+function isSpecBullet(value) {
+  const text = String(value ?? '');
+  if (wordCount(text) > 14) return false;
+  return /(\bwindows\b|\bmacos\b|\blinux\b|\bandroid\b|\bios\b|\bvst[0-9i]*\b|\baax\b|\bau\b|\bram\b|\bmemoria\b|\bcpu\b|\bprocesador\b|\bgpu\b|\d+\s*(?:gb|mb|tb)\b|\bprecio\b|\busd\b|\beur\b|\bgratis\b|\blicencia\b|\bversi[oó]n\b)/i.test(text)
+    && text.length < 170;
+}
+
 // Valores que delatan una ficha técnica y no una característica redactada.
 function looksLikeSpecValue(value) {
   const text = String(value ?? '');
   if (text.length > 90) return false;
   return /(\bwindows\b|\bmacos\b|\blinux\b|\bandroid\b|\bios\b|\bvst[0-9i]*\b|\baax\b|\bau\b|\bram\b|\bmemoria\b|\bcpu\b|\bprocesador\b|\bgpu\b|\d+\s*(?:gb|mb|tb)\b|\bprecio\b|\busd\b|\beur\b|\bgratis\b|\blicencia\b)/i.test(text);
-}
-
-function isSpecBullet(value) {
-  const text = String(value ?? '');
-  return /(\bwindows\b|\bmacos\b|\blinux\b|\bandroid\b|\bios\b|\bvst[0-9i]*\b|\baax\b|\bau\b|\bram\b|\bmemoria\b|\bcpu\b|\bprocesador\b|\bgpu\b|\d+\s*(?:gb|mb|tb)\b|\bprecio\b|\busd\b|\beur\b|\bgratis\b|\blicencia\b|\bversi[oó]n\b)/i.test(text)
-    && text.length < 170;
 }
 
 function safeRatio(part, whole) {
@@ -792,7 +795,7 @@ function pickTitle(meta, blocks, sourceUrl) {
   if (!candidates.length) {
     const firstParagraph = blocks.find(block => block.type === 'paragraph'
       && block.text.length >= 6 && block.text.length <= 110
-      && !(isSpecBullet(block.text) && block.text.length < 95));
+      && !isSpecBullet(block.text));
     if (firstParagraph && !/^https?:/i.test(firstParagraph.text) && !isBadTitle(firstParagraph.text)) {
       push(firstParagraph.text.replace(/[.!?…]+$/, ''), /[.!?…]$/.test(firstParagraph.text) ? 42 : 55);
     }
@@ -844,7 +847,12 @@ function guessNameFromBlocks(blocks) {
     const conEspacio = text.match(/\b[A-Z][a-z]{2,}\s\d{1,2}\b/g) || [];
     for (const raw of [...pegados, ...conEspacio]) {
       const candidate = tidy(raw);
-      if (candidate && candidate.length >= 4 && !NOISE.test(candidate) && !isSectionLabel(candidate)) return candidate;
+      if (!candidate || candidate.length < 4) continue;
+      // "Windows 11" o "macOS 12" son plataformas, no productos.
+      const base = candidate.replace(/\s*\d+(?:\.\d+)?$/, '').trim();
+      if (NOISE.test(candidate) || NOISE.test(base)) continue;
+      if (isSectionLabel(candidate)) continue;
+      return candidate;
     }
   }
 
@@ -1631,8 +1639,7 @@ function pickParagraphs(blocks, title, type, maxParagraphs, priorityText = '') {
     if ((text.match(/https?:\/\//g) || []).length > 1) return;
     if (/^(suscr|newsletter|descarg|comprar|acept|pol[ií]tica de cookies)/i.test(text)) return;
     if (/(cookie|all rights reserved|todos los derechos|aviso legal|privacy policy)/i.test(text) && text.length < 200) return;
-    // Una línea de ficha es corta. Un párrafo que menciona "60 MB" no lo es.
-    if (isSpecBullet(text) && text.length < 95) return;
+    if (isSpecBullet(text)) return;
 
     const sentences = splitSentences(text);
     if (!sentences.length) return;

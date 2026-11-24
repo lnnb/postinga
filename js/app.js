@@ -155,6 +155,7 @@ const state = {
   copiedHtmlLabel: '',
   copiedHelpLabel: '',
   imageChoice: '',
+  attachments: [],
   reader: { available: false, checked: false }
 };
 
@@ -352,7 +353,7 @@ function renderTitlebar() {
   $('#engineChipText').textContent = aiEngineLabel(prefs.engine);
   $('#engineChip').title = `Motor: ${aiEngineLabel(prefs.engine)}. Clic para cambiar.`;
   $('#toneSelect').value = prefs.tone;
-  $('#bAnalyze').disabled = state.analyzing || !captureInput.value.trim();
+  $('#bAnalyze').disabled = !canAnalyze();
 }
 
 /* ============================================================
@@ -481,6 +482,8 @@ function renderLibrary() {
 }
 
 function openLibraryEntry(id) {
+  state.attachments = [];
+  renderAttachments();
   const entry = library.find(item => item.id === id);
   if (!entry) return;
   if (state.dirty) saveCurrentToLibrary(true);
@@ -550,6 +553,100 @@ function deleteLibraryEntry(id) {
 /* ============================================================
    Captura inteligente
    ============================================================ */
+/* ============================================================
+   Archivos adjuntos
+   Cada archivo entra como una fuente aparte, además de lo que haya
+   escrito en el recuadro.
+   ============================================================ */
+const ATTACH_LIMIT = 600 * 1024;
+
+function formatBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderAttachments() {
+  const row = $('#attachRow');
+  if (!row) return;
+  const files = state.attachments || [];
+  row.hidden = files.length === 0;
+  row.innerHTML = files.map(file => `<span class="attach-chip" title="${esc(file.name)}">
+    <svg><use href="#${file.kind === 'html' ? 'i-code' : 'i-text'}"/></svg>
+    <span class="attach-name">${esc(file.name)}</span>
+    <span class="attach-size">${formatBytes(file.size)}</span>
+    <button type="button" data-detach="${esc(file.id)}" aria-label="Quitar ${esc(file.name)}"><svg><use href="#i-x"/></svg></button>
+  </span>`).join('');
+  refreshDetection();
+}
+
+function removeAttachment(id) {
+  state.attachments = (state.attachments || []).filter(file => file.id !== id);
+  renderAttachments();
+}
+
+function addAttachments(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  const aceptados = [];
+  const rechazados = [];
+
+  const pendientes = files.map(file => new Promise(resolve => {
+    const esTexto = /^text\//.test(file.type) || /\.(txt|md|markdown|html?|text)$/i.test(file.name);
+    if (!esTexto) {
+      rechazados.push(`${file.name} (no es texto)`);
+      return resolve();
+    }
+    if (file.size > ATTACH_LIMIT) {
+      rechazados.push(`${file.name} (supera 600 KB)`);
+      return resolve();
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = String(reader.result || '');
+      if (!content.trim()) {
+        rechazados.push(`${file.name} (está vacío)`);
+        return resolve();
+      }
+      aceptados.push({
+        id: uid('file'),
+        name: file.name,
+        size: file.size,
+        kind: looksLikeHtml(content) ? 'html' : 'text',
+        content
+      });
+      resolve();
+    };
+    reader.onerror = () => {
+      rechazados.push(`${file.name} (no se pudo leer)`);
+      resolve();
+    };
+    reader.readAsText(file);
+  }));
+
+  Promise.all(pendientes).then(() => {
+    if (!aceptados.length) {
+      toast(rechazados.length ? `No se pudo adjuntar: ${rechazados[0]}` : 'No se adjuntó nada', { type: 'warn' });
+      return;
+    }
+    state.attachments = [...(state.attachments || []), ...aceptados];
+    renderAttachments();
+    const html = aceptados.filter(file => file.kind === 'html').length;
+    const resumen = aceptados.length === 1
+      ? `Adjuntado: ${aceptados[0].name}`
+      : `${aceptados.length} archivos adjuntados${html ? ` (${html} con HTML)` : ''}`;
+    toast(rechazados.length ? `${resumen} · ${rechazados.length} sin agregar` : resumen);
+  });
+}
+
+/** ¿Hay algo para analizar? Alcanza con texto en el recuadro o archivos adjuntos. */
+function canAnalyze() {
+  if (state.analyzing) return false;
+  if (captureInput.value.trim()) return true;
+  return (state.attachments || []).length > 0;
+}
+
 function detectLabel(value) {
   const parsed = parseSources(value);
   const resto = String(parsed.text || '').trim();
@@ -560,6 +657,9 @@ function detectLabel(value) {
   if (resto) {
     partes.push(looksLikeHtml(resto) ? 'HTML pegado' : `${formatNumber(wordCount(resto))} palabras`);
   }
+
+  const adjuntos = (state.attachments || []).length;
+  if (adjuntos) partes.push(`${adjuntos} ${adjuntos === 1 ? 'archivo' : 'archivos'}`);
 
   if (!partes.length) return { html: 'Esperando contenido', kind: 'empty' };
   return {
@@ -574,7 +674,7 @@ function refreshDetection() {
   if (chip) chip.dataset.kind = label.kind;
   const text = $('#detectText');
   if (text) text.textContent = label.html;
-  $('#bAnalyze').disabled = state.analyzing || !captureInput.value.trim();
+  $('#bAnalyze').disabled = !canAnalyze();
   autoResize(captureInput, 230);
 }
 
@@ -629,7 +729,7 @@ function renderCapture() {
 
   renderLockHint();
   renderCaptureAlert();
-  refreshDetection();
+  renderAttachments();
 }
 
 function renderLockHint() {
@@ -686,6 +786,8 @@ function setAnalyzing(active) {
 
 function resetCapture(forNew = false) {
   if (state.analyzing) return;
+  state.attachments = [];
+  renderAttachments();
   state.summary = null;
   state.captureMin = false;
   state.alert = null;
@@ -791,11 +893,20 @@ function applyAnalysis(post, info = {}) {
  */
 async function gatherSources(rawInput, { signal, onStage, fallbackUrl = '' } = {}) {
   const parsed = parseSources(rawInput);
+  const adjuntos = Array.isArray(state.attachments) ? state.attachments : [];
   const leidas = [];
   const fallidas = [];
   const maxLinks = 3;
 
-  for (const url of parsed.urls.slice(0, maxLinks)) {
+  // Un .txt con links adentro también aporta fuentes para leer.
+  const urlsAdjuntas = [];
+  adjuntos.forEach(file => {
+    if (looksLikeHtml(file.content)) return;
+    parseSources(file.content).urls.forEach(url => urlsAdjuntas.push(url));
+  });
+  const urls = [...new Set([...parsed.urls, ...urlsAdjuntas])];
+
+  for (const url of urls.slice(0, maxLinks)) {
     if (signal && signal.aborted) {
       const abort = new Error('Lectura cancelada.');
       abort.name = 'AbortError';
@@ -811,7 +922,7 @@ async function gatherSources(rawInput, { signal, onStage, fallbackUrl = '' } = {
     }
   }
 
-  if (parsed.urls.length && !leidas.length) {
+  if (urls.length && !leidas.length) {
     const error = new Error(fallidas[0] ? fallidas[0].message : 'No se pudo leer ningún enlace.');
     error.retryWithText = true;
     throw error;
@@ -839,16 +950,31 @@ async function gatherSources(rawInput, { signal, onStage, fallbackUrl = '' } = {
   leidas.forEach(item => { meta = mergeMeta(meta, item.result.meta); });
   if (metaPegada) meta = mergeMeta(metaPegada, meta);
 
-  // Lo que pegás a mano va primero: es tu aporte y manda sobre lo leído.
-  const textos = [];
-  if (pegado.length > 20) textos.push(pegado);
+  // Tus archivos adjuntos: cada uno entra como una fuente aparte.
+  const propios = [];
+  if (pegado.length > 20) propios.push(pegado);
+  adjuntos.forEach(file => {
+    if (looksLikeHtml(file.content)) {
+      const metaArchivo = extractMeta(file.content, '');
+      if (metaArchivo) meta = mergeMeta(meta, metaArchivo);
+      const convertido = htmlToText(file.content);
+      if (convertido.length > 20) propios.push(convertido);
+    } else {
+      // Se descartan las líneas que son solo links: esas ya se leen aparte.
+      const limpio = parseSources(file.content).text.trim();
+      if (limpio.length > 20) propios.push(limpio);
+    }
+  });
+
+  // Lo tuyo (pegado y adjuntos) va primero: manda sobre lo leído.
+  const textos = [...propios];
   leidas.forEach(item => {
     if (item.result.text && item.result.text.length > 20) textos.push(item.result.text);
   });
   const text = textos.join('\n\n');
 
   const sourceUrl = (leidas[0] && (leidas[0].result.finalUrl || leidas[0].url))
-    || parsed.urls[0]
+    || urls[0]
     || safeHttpUrl(fallbackUrl)
     || '';
 
@@ -856,6 +982,7 @@ async function gatherSources(rawInput, { signal, onStage, fallbackUrl = '' } = {
     payload: { text, meta },
     sourceUrl,
     pegado,
+    priorityText: propios.join('\n\n'),
     provider: leidas.length ? leidas[0].result.provider : (metaPegada ? 'html' : 'texto'),
     sources: {
       leidas: leidas.map(item => ({
@@ -863,7 +990,8 @@ async function gatherSources(rawInput, { signal, onStage, fallbackUrl = '' } = {
         provider: item.result.provider
       })),
       fallidas,
-      palabrasPegadas: wordCount(pegado),
+      adjuntos: adjuntos.length,
+      palabrasPegadas: wordCount(propios.join(' ')),
       esHtml: Boolean(resto) && looksLikeHtml(resto)
     }
   };
@@ -872,12 +1000,17 @@ async function gatherSources(rawInput, { signal, onStage, fallbackUrl = '' } = {
 async function runCapture() {
   if (state.analyzing) return;
   const raw = captureInput.value.trim();
-  if (!raw) {
+  if (!raw && !(state.attachments || []).length) {
     captureInput.focus();
     return;
   }
   const fuentes = parseSources(raw);
-  if (fuentes.isEmpty) return;
+  const adjuntos = (state.attachments || []).length;
+  if (fuentes.isEmpty && !adjuntos) return;
+  if (fuentes.isEmpty && adjuntos && !raw) {
+    // Solo archivos adjuntos: alcanza para armar el post.
+    fuentes.isEmpty = false;
+  }
   const detected = {
     kind: fuentes.urls.length ? 'url' : (fuentes.isHtml ? 'html' : 'text'),
     url: fuentes.urls[0] || '',
@@ -941,11 +1074,11 @@ async function runCapture() {
     });
     if (signal.aborted) throw abortError();
 
-    const { payload, sourceUrl, provider, sources, pegado } = gathered;
+    const { payload, sourceUrl, provider, sources, pegado, priorityText } = gathered;
     setCaptureStatus('Detectando título, imágenes y características…');
     await nextTick(30);
 
-    const baseline = analyze(payload, { ...options, sourceUrl, provider, priorityText: pegado || '' });
+    const baseline = analyze(payload, { ...options, sourceUrl, provider, priorityText: priorityText || pegado || '' });
     if (signal.aborted) throw abortError();
 
     let post = baseline;
@@ -1910,7 +2043,6 @@ async function runLibraryUpdate() {
       tone: prefs.tone,
       depth: prefs.depth,
       noOpen: prefs.noOpen,
-      priorityText: pegado || '',
       seed: `${Date.now()}-${Math.random().toString(36).slice(2)}`
     };
     const baseline = analyze(payload, { ...options, sourceUrl });
@@ -2225,6 +2357,8 @@ function clearAllData() {
    Nuevo / ejemplo / guardar / abrir
    ============================================================ */
 function loadExample() {
+  state.attachments = [];
+  renderAttachments();
   // El ejemplo usa el diseño actual para no cambiar el tema de golpe.
   const design = { theme: S.theme, accent: S.accent, sep: (S.sep || []).slice(0, 3) };
   S = normalizePostState({ ...clone(DEF), id: uid('post'), ...design });
@@ -2247,6 +2381,8 @@ function loadExample() {
 
 function newPost() {
   if (state.dirty) saveCurrentToLibrary(true);
+  state.attachments = [];
+  renderAttachments();
   const design = { theme: S.theme, accent: S.accent, sep: S.sep.slice(0, 3) };
   S = normalizePostState({ ...clone(BLANK), id: uid('post'), ...design });
   state.dirty = false;
@@ -2448,30 +2584,18 @@ function bindEvents() {
     });
   });
   dropZone.addEventListener('drop', event => {
-    const files = event.dataTransfer.files;
-    if (files && files[0]) {
-      const file = files[0];
-      if (/\.json$/i.test(file.name)) {
-        toast('Para importar un proyecto usá Ajustes > Importar', { type: 'warn' });
-        return;
-      }
-      if (!/\.(txt|md|markdown|html?|text)$/i.test(file.name) && !/^text\//.test(file.type)) {
-        toast('Ese archivo no parece texto. Probá con .txt, .md o .html.', { type: 'warn' });
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => {
-        captureInput.value = String(reader.result || '');
-        refreshDetection();
-        captureInput.focus();
-        toast('Archivo cargado');
-      };
-      reader.readAsText(file);
+    const files = Array.from(event.dataTransfer.files || []);
+    if (files.length) {
+      const proyectos = files.filter(file => /\.json$/i.test(file.name));
+      const adjuntos = files.filter(file => !/\.json$/i.test(file.name));
+      if (adjuntos.length) addAttachments(adjuntos);
+      else if (proyectos.length) toast('Para importar un proyecto usá Ajustes > Importar', { type: 'warn' });
       return;
     }
     const text = event.dataTransfer.getData('text/uri-list') || event.dataTransfer.getData('text/plain');
     if (text) {
-      captureInput.value = text.trim();
+      const actual = captureInput.value.trim();
+      captureInput.value = actual ? `${actual}\n\n${text.trim()}` : text.trim();
       refreshDetection();
       captureInput.focus();
     }
@@ -2508,6 +2632,16 @@ function bindEvents() {
     if (!item) return;
     event.preventDefault();
     openLibraryEntry(item.dataset.id);
+  });
+
+  $('#bAttach').addEventListener('click', () => $('#attachInput').click());
+  $('#attachInput').addEventListener('change', event => {
+    addAttachments(event.target.files);
+    event.target.value = '';
+  });
+  $('#attachRow').addEventListener('click', event => {
+    const button = event.target.closest('[data-detach]');
+    if (button) removeAttachment(button.dataset.detach);
   });
 
   $('#libSearch').addEventListener('input', renderLibrary);

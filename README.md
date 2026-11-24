@@ -71,6 +71,8 @@ En el recuadro podés poner **una o varias cosas a la vez**:
 - **Uno o más links** (hasta 3): se leen todos y se combinan.
 - **Texto pegado**: tus notas, un review, lo que quieras aportar.
 - **Código HTML**: si copiaste un post o una ficha, también sirve.
+- **Archivos**: arrastrá varios a la vez (`.txt`, `.md`, `.html`) o usá **📎 Adjuntar**.
+  Cada uno queda como una ficha con su nombre, y lo podés quitar con la ✕.
 
 Se pueden mezclar sin problema — el primero manda y lo tuyo tiene prioridad:
 

@@ -207,6 +207,7 @@
                  para poder usarlos siempre, incluso con la tarjeta minimizada. -->
             <div class="capture-summary" id="captureSummary" hidden></div>
             <p class="lock-hint" id="lockHint" hidden></p>
+            <div class="attach-row" id="attachRow" hidden></div>
 
             <div class="capture-body" id="captureBody">
               <div class="capture-body-inner">
@@ -217,7 +218,7 @@
                       <span class="dot"></span>
                       <span id="detectText">Esperando contenido</span>
                     </span>
-                    <span class="capture-drop-hint" id="captureDropHint">Arrastrá .txt, .md o .html</span>
+                    <span class="capture-drop-hint" id="captureDropHint">Arrastrá varios .txt, .md o .html</span>
                   </div>
                 </div>
 
@@ -237,6 +238,7 @@
                       <svg><use href="#i-sparkle"/></svg>
                       <span id="engineChipText">Local</span>
                     </button>
+                    <button class="text-btn" id="bAttach" title="Adjuntar archivos (.txt, .md, .html)">📎 Adjuntar</button>
                     <button class="text-btn" id="bCaptureOptions">Opciones</button>
                   </div>
                   <div class="capture-run">
@@ -664,6 +666,7 @@
 
   <div class="sr-only" id="ariaLive" aria-live="polite"></div>
   <input type="file" id="fileInput" accept=".json,application/json" hidden>
+  <input type="file" id="attachInput" accept=".txt,.md,.markdown,.html,.htm,text/plain,text/html" multiple hidden>
 
   <script>
     // Habilita la instalación como app (Chrome lo exige). Sin caché: siempre red.

@@ -1142,15 +1142,27 @@ describe('Interfaz (css/style.css)', () => {
     assert(css.includes('.icon-btn.only-narrow'), 'falta .icon-btn.only-narrow');
   });
 
-  test('el resumen y el aviso de candados viven fuera del bloque colapsable', () => {
+  test('el resumen, los candados y los adjuntos viven fuera del bloque colapsable', () => {
     const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
     equal((html.match(/id="captureSummary"/g) || []).length, 1, 'debería haber un solo resumen');
     const summaryAt = html.indexOf('id="captureSummary"');
     const lockAt = html.indexOf('id="lockHint"');
+    const attachAt = html.indexOf('id="attachRow"');
     const bodyAt = html.indexOf('id="captureBody"');
-    assert(summaryAt !== -1 && bodyAt !== -1 && lockAt !== -1, 'faltan los contenedores de la captura');
+    assert(summaryAt !== -1 && bodyAt !== -1 && lockAt !== -1 && attachAt !== -1, 'faltan los contenedores de la captura');
     assert(summaryAt < bodyAt, 'el resumen debe ir antes del cuerpo colapsable');
     assert(lockAt < bodyAt, 'el aviso de candados debe ir antes del cuerpo colapsable');
+    assert(attachAt < bodyAt, 'los adjuntos deben ir antes del cuerpo colapsable, para poder quitarlos siempre');
+  });
+
+  test('se pueden adjuntar varios archivos a la vez', () => {
+    const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    const app = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8');
+    includes(html, 'id="attachInput"', 'falta el campo de archivos');
+    includes(html, 'id="attachInput" accept=".txt,.md,.markdown,.html,.htm,text/plain,text/html" multiple', 'debería aceptar varios archivos de texto');
+    includes(app, 'addAttachments', 'debería existir la función que los agrega');
+    includes(app, 'state.attachments', 'los adjuntos deberían guardarse en el estado');
+    includes(app, 'canAnalyze', 'el botón debería habilitarse también con adjuntos');
   });
 
   test('la app arranca vacía, no con el ejemplo cargado', () => {

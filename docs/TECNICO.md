@@ -141,6 +141,26 @@ del documento (por coherencia), así que la ventaja garantiza que entre, no que 
 
 ---
 
+## Archivos adjuntos
+
+Además de lo que se escribe o pega en el recuadro, se pueden arrastrar archivos (o usar el
+botón **📎 Adjuntar**). Se guardan en `state.attachments` y se muestran como fichas con su
+nombre y peso.
+
+- Se aceptan solo tipos de texto y hasta 600 KB por archivo.
+- Los `.html` se convierten con `htmlToText` y sus metadatos (`extractMeta`) se suman a los
+  del primer link.
+- Un `.txt` que solo tiene links **no** aporta texto: sus links se leen como fuentes.
+- Los adjuntos no se guardan en el borrador: son entradas de trabajo. El resultado del
+  análisis sí queda guardado.
+- La fila de fichas vive **fuera** del bloque colapsable, para poder quitar un archivo
+  incluso con la tarjeta minimizada.
+
+Un archivo adjunto puede ser la única entrada: el botón *Analizar* se habilita con texto
+**o** con adjuntos (`canAnalyze()`).
+
+---
+
 ## Cómo se elige el título
 
 Es la parte más delicada, porque de ahí salen el `<h2>` de la portada, el `alt` de la imagen y
