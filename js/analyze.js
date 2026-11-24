@@ -790,7 +790,9 @@ function pickTitle(meta, blocks, sourceUrl) {
   }
 
   if (!candidates.length) {
-    const firstParagraph = blocks.find(block => block.type === 'paragraph' && block.text.length >= 6 && block.text.length <= 110);
+    const firstParagraph = blocks.find(block => block.type === 'paragraph'
+      && block.text.length >= 6 && block.text.length <= 110
+      && !(isSpecBullet(block.text) && block.text.length < 95));
     if (firstParagraph && !/^https?:/i.test(firstParagraph.text) && !isBadTitle(firstParagraph.text)) {
       push(firstParagraph.text.replace(/[.!?…]+$/, ''), /[.!?…]$/.test(firstParagraph.text) ? 42 : 55);
     }
@@ -834,10 +836,13 @@ function guessNameFromBlocks(blocks) {
     if (validos.length) return validos[0];
   }
 
-  // Nombres con número de versión: soothe2, Sylenth1, Serum 2
+  // Nombres con número de versión: "soothe2", "Sylenth1", "Serum 2".
+  // Se exige que las letras y el número vayan juntos, o que la palabra empiece
+  // en mayúscula, para no confundir "unos 60" con un producto.
   for (const text of paragraphs) {
-    const matches = text.match(/\b[\p{Lu}\p{L}][\p{L}]{2,}\s?\d+(?:\.\d+)?\b/gu) || [];
-    for (const raw of matches) {
+    const pegados = text.match(/\b[A-Za-z][A-Za-z-]*\d+(?:\.\d+)?\b/g) || [];
+    const conEspacio = text.match(/\b[A-Z][a-z]{2,}\s\d{1,2}\b/g) || [];
+    for (const raw of [...pegados, ...conEspacio]) {
       const candidate = tidy(raw);
       if (candidate && candidate.length >= 4 && !NOISE.test(candidate) && !isSectionLabel(candidate)) return candidate;
     }
@@ -1626,7 +1631,8 @@ function pickParagraphs(blocks, title, type, maxParagraphs, priorityText = '') {
     if ((text.match(/https?:\/\//g) || []).length > 1) return;
     if (/^(suscr|newsletter|descarg|comprar|acept|pol[ií]tica de cookies)/i.test(text)) return;
     if (/(cookie|all rights reserved|todos los derechos|aviso legal|privacy policy)/i.test(text) && text.length < 200) return;
-    if (isSpecBullet(text) && text.length < 130) return;
+    // Una línea de ficha es corta. Un párrafo que menciona "60 MB" no lo es.
+    if (isSpecBullet(text) && text.length < 95) return;
 
     const sentences = splitSentences(text);
     if (!sentences.length) return;
@@ -2049,7 +2055,23 @@ function analyze(input, options = {}) {
     throw error;
   }
 
-  const blocks = buildBlocks(text);
+  let blocks = buildBlocks(text);
+
+  // Si pegaste UNA sola línea con formato "algo: algo", es una nota tuya, no una
+  // característica del producto: pasa a ser parte del cuerpo del post.
+  if (opts.priorityText) {
+    const prioridad = normalizeCompare(String(opts.priorityText));
+    const esPegado = block => {
+      const key = normalizeCompare(block.text || '');
+      return key.length > 20 && prioridad.includes(key.slice(0, 100));
+    };
+    const pegadas = blocks.filter(block => block.type === 'feature' && esPegado(block));
+    if (pegadas.length === 1) {
+      const nota = pegadas[0];
+      blocks = blocks.map(block => (block === nota ? { ...block, type: 'paragraph' } : block));
+    }
+  }
+
   if (!blocks.length && !meta.title) {
     throw new Error('No pudimos encontrar contenido útil en ese texto.');
   }
