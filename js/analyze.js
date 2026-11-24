@@ -24,6 +24,16 @@ const GENERIC_HEADINGS = new Set([
   'enlaces', 'links', 'recursos', 'resources', 'fuentes', 'sources'
 ]);
 
+/* Encabezados que son navegación del sitio y no contenido del post.
+   Cuando aparece uno, se saltea todo lo que sigue hasta el próximo encabezado. */
+const NAV_SECTION_RE = /^(?:posts? relacionados?|art[ií]culos? relacionados?|relacionados?|te puede interesar|quiz[aá]s te interese|m[aá]s le[ií]dos|sigue leyendo|comentarios?|comments?|explorar|explore|apariencia|este post|m[aá]s de [A-ZÁÉÍÓÚÑ][\w.-]+(?:\s+[A-ZÁÉÍÓÚÑ][\w.-]+){0,2}|more from [A-Z][\w.-]+|related posts?|you may also like|recommended|trending|popular|sidebar|men[uú]|navegaci[oó]n|breadcrumb|tags?|etiquetas?|compartir|share|newsletter|suscripci[oó]n|suscribite|últimas noticias|latest news|sobre el autor|about the author|publicidad|advertisement)$/i;
+
+function isNavSection(value) {
+  const text = cleanSpace(value);
+  if (!text || text.length > 60) return false;
+  return NAV_SECTION_RE.test(text);
+}
+
 const JUNK_LINE_PATTERNS = [
   /^(aceptar|rechazar|configurar|gestionar|personalizar)( (todas? )?(las )?cookies)?$/i,
   /^(accept|reject|manage|configure)( all)?( cookies)?$/i,
@@ -45,7 +55,10 @@ const DENY_SPEC_KEYS = new Set([
   'leer', 'leermas', 'ver', 'vermas', 'compartir', 'fuente', 'fuentes', 'foto', 'fotos', 'imagen',
   'imagenes', 'video', 'videos', 'nota', 'notas', 'tags', 'etiquetas', 'autor del post', 'publicado por',
   'categoria del post', 'comentarios', 'menu', 'inicio', 'home', 'siguiente', 'anterior', 'descargar',
-  'note', 'read', 'see', 'source', 'image', 'video', 'share', 'posted by', 'tags', 'category'
+  'note', 'read', 'see', 'source', 'image', 'video', 'share', 'posted by', 'tags', 'category',
+  'creado', 'modificado', 'actualizado', 'visitas', 'puntos', 'comentarios', 'seguidores',
+  'coming soon', 'advertisement', 'sponsored', 'related', 'trending', 'newsletter', 'subscribe',
+  'publicado por', 'fecha de creacion', 'ultima actualizacion'
 ]);
 
 const SPEC_KEY_RULES = [
@@ -103,10 +116,11 @@ const SOCIAL_HOSTS = [
   'threads.net', 'tumblr.com', 'discord.gg', 'discord.com'
 ];
 
-const BAD_LINK_PATTERNS = /\b(login|signin|sign-in|signin|signup|sign-up|register|account|cart|checkout|privacy|terms|cookies|legal|newsletter|subscribe|unsubscribe|share|sharer|intent|logout|password|mailto:|javascript:)/i;
+const BAD_LINK_PATTERNS = /\b(skip to|saltar al|ir al contenido|main content|contenido principal|back to top|volver arriba|breadcrumb|menu de|men[uú] principal|login|signin|sign-in|signup|sign-up|register|account|cart|checkout|privacy|terms|cookies|legal|newsletter|subscribe|unsubscribe|share|sharer|intent|logout|password|mailto:|javascript:|registro|registrate|registrarme|identificarme|ingresar|iniciar-sesion|acceder|mi-perfil|mi-cuenta)/i;
 const IMAGE_EXT = /\.(?:png|jpe?g|webp|avif|gif|svg|bmp|tiff)(?:\?|#|$)/i;
 const FILE_EXT = /\.(?:exe|dmg|pkg|msi|deb|rpm|apk|xapk|zip|rar|7z|tar|gz|iso|torrent|epub|pdf|mp3|flac|wav|mp4|mkv)(?:\?|#|$)/i;
-const DOWNLOAD_HINT = /\b(download|downloads|descargar|descarga|descargas|demo|trial|prueba|free|gratis|setup|installer|instalador|buy|purchase|comprar|store|tienda|steam|itch|apps\.apple|play\.google|releases)\b/i;
+/* "free" y "gratis" sueltos son demasiado comunes: se exige contexto de descarga. */
+const DOWNLOAD_HINT = /\b(download|downloads|descargar|descarga|descargas|demo|trial|prueba|setup|installer|instalador|buy|purchase|comprar|store|tienda|steam|itch|apps\.apple|play\.google|releases)\b|\b(descarga|download)\w*\s+(free|gratis)\b|\b(free|gratis)\s+(descarga|download)\w*\b/i;
 const DOCS_HINT = /\b(docs?|documentation|documentaci[oó]n|manual|user guide|guia|guide|help|soporte|support|faq|wiki|knowledge base|tutorial)\b/i;
 const VIDEO_HINT = /\b(youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com)\b/i;
 const STORE_HOSTS = [
@@ -352,6 +366,33 @@ function accentClean(value) {
   return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+const SPANISH_HINTS = new Set(['el', 'la', 'los', 'las', 'de', 'que', 'en', 'un', 'una', 'para', 'con',
+  'es', 'se', 'del', 'por', 'no', 'mas', 'pero', 'sus', 'ya', 'este', 'porque', 'esta', 'entre', 'cuando',
+  'muy', 'sin', 'sobre', 'tambien', 'hasta', 'hay', 'donde', 'desde', 'todo', 'durante', 'todos', 'uno',
+  'les', 'ni', 'contra', 'otros', 'ese', 'eso', 'ante', 'ellos', 'esto', 'antes', 'unos', 'otro', 'otra',
+  'tanto', 'esa', 'estos', 'mucho', 'nada', 'muchos', 'cual', 'poco', 'ella', 'estar', 'estas', 'algo',
+  'cada', 'puede', 'tiene', 'hace', 'son', 'fue', 'ser', 'solo', 'mas', 'tus', 'mi', 'al']);
+
+const ENGLISH_HINTS = new Set(['the', 'of', 'and', 'to', 'in', 'is', 'that', 'for', 'it', 'as', 'with',
+  'on', 'be', 'at', 'by', 'this', 'are', 'or', 'from', 'an', 'was', 'were', 'has', 'have', 'can', 'which',
+  'you', 'your', 'we', 'they', 'their', 'will', 'more', 'not', 'but', 'all', 'when', 'than', 'into', 'out',
+  'up', 'about', 'some', 'would', 'there', 'other', 'them', 'these', 'then', 'its', 'our', 'over', 'only',
+  'also', 'such', 'may', 'use', 'used', 'using', 'one', 'two']);
+
+/** Devuelve 'es', 'en' o '' si el texto es muy corto o está empatado. */
+function languageHint(value) {
+  const words = normalizeCompare(value).split(' ').filter(Boolean);
+  if (words.length < 12) return '';
+  let es = 0;
+  let en = 0;
+  words.forEach(word => {
+    if (SPANISH_HINTS.has(word)) es += 1;
+    if (ENGLISH_HINTS.has(word)) en += 1;
+  });
+  if (es === en) return '';
+  return es > en ? 'es' : 'en';
+}
+
 function splitSentences(value) {
   const text = String(value ?? '').replace(/\s+/g, ' ').trim();
   if (!text) return [];
@@ -473,13 +514,31 @@ function cleanDescription(value) {
   return desc;
 }
 
+/* Encabezados de review que son metacomentario, no una característica. */
+const REVIEW_META_RE = /^(what is it|the web says|our verdict|verdict|conclusion|conclusions|introduction|overview|first impressions|sound quality|performance|value for money|value|should you buy|who is it for|the basics|summary|final thoughts|pros and cons|alternatives|specs|specifications|en resumen|veredicto|conclusion|introduccion|primeras impresiones|calidad de sonido|rendimiento|vale la pena|para quien es|resumen|ultimas palabras)$/i;
+
+function isReviewMeta(value) {
+  return REVIEW_META_RE.test(cleanSpace(value));
+}
+
 function genericHeading(value) {
-  return GENERIC_HEADINGS.has(normalizeCompare(value));
+  const text = cleanSpace(value);
+  if (isReviewMeta(text)) return true;
+  return GENERIC_HEADINGS.has(normalizeCompare(text));
 }
 
 const NON_FEATURE_NAMES = /^(lo mejor|lo peor|en resumen|en conclusi[oó]n|resumen|conclusi[oó]n|nota|ojo|atenci[oó]n|importante|tip|consejo|aviso|record[aá]|aclaraci[oó]n|la posta|la data|el dato|lo bueno|lo malo|dato extra|dato de color)$/i;
 
 /* Nombres que en realidad son una frase entera, no una etiqueta de característica. */
+/* Nombres que son marcas de sección y no una característica. */
+const WEAK_NAME_RE = /^(?:\d+(?:\.\d+)*\.?\s|new in\b|what'?s new\b|nov(?:edades)? en\b|versi[oó]n \d|v\d+(?:\.\d+)*$|chapter \d|cap[ií]tulo \d|part \d|parte \d)/i;
+
+function isWeakFeatureName(name) {
+  const text = cleanSpace(name);
+  if (!text) return true;
+  return WEAK_NAME_RE.test(text);
+}
+
 function looksLikeSentence(name) {
   const text = cleanSpace(name);
   if (!text) return true;
@@ -527,9 +586,17 @@ function buildBlocks(text) {
   let previous = null;
   let group = -1;
   let inGroup = false;
+  let saltarHastaNivel = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i].replace(/[ \t\f\v]+/g, ' ').trim();
+
+    // Dentro de una sección de navegación: se ignora hasta el próximo encabezado.
+    if (saltarHastaNivel) {
+      const nivel = rawLine.match(/^(#{1,6})\s+/);
+      if (nivel && nivel[1].length <= saltarHastaNivel) saltarHastaNivel = 0;
+      else continue;
+    }
     if (!rawLine) {
       inGroup = false;
       previous = null;
@@ -550,6 +617,12 @@ function buildBlocks(text) {
     if (heading) {
       const textValue = stripMarkdownInline(heading[2]);
       if (textValue.length >= 2) {
+        if (isNavSection(textValue)) {
+          saltarHastaNivel = heading[1].length;
+          previous = null;
+          inGroup = false;
+          continue;
+        }
         blocks.push({ type: 'heading', level: heading[1].length, text: textValue, raw: heading[2] });
         previous = null;
         inGroup = false;
@@ -581,7 +654,7 @@ function buildBlocks(text) {
       const name = cleanName(rawName);
       const desc = cleanDescription(rawDesc);
       const wordsInName = wordCount(name);
-      if (name && desc && wordsInName <= 8 && name.length <= 48 && !NON_FEATURE_NAMES.test(name) && !genericHeading(name) && !looksLikeSentence(name) && !looksLikeSpecValue(rawDesc)) {
+      if (name && desc && wordsInName <= 8 && name.length <= 48 && !NON_FEATURE_NAMES.test(name) && !genericHeading(name) && !looksLikeSentence(name) && !isWeakFeatureName(name) && !looksLikeSpecValue(rawDesc)) {
         blocks.push({ type: 'feature', name, desc, text: `${name}: ${desc}`, raw: rawLine });
         previous = null;
         continue;
@@ -747,13 +820,15 @@ function fallbackTitle(sourceUrl) {
   return titleCase(label || 'Nuevo aporte');
 }
 
-function pickTitle(meta, blocks, sourceUrl) {
+function pickTitle(meta, blocks, sourceUrl, options = {}) {
   const candidates = [];
   const push = (value, score) => {
     const cleaned = cleanTitle(value, meta.siteName || '', sourceUrl);
     if (cleaned && !isBadTitle(cleaned)) candidates.push({ value: cleaned, score });
   };
 
+  // El título de la primera fuente que diste manda sobre todo lo demás.
+  if (options.primaryTitle) push(options.primaryTitle, 150);
   if (meta.ogTitle) push(meta.ogTitle, 140);
   if (meta.title) push(meta.title, 130);
   if (meta.ld && meta.ld.name) push(meta.ld.name, 135);
@@ -1003,6 +1078,14 @@ function detectType(text, meta) {
    Características
    ============================================================ */
 function splitFeature(text) {
+  // "**Más de 700 pantallas** diseñadas a mano…" → nombre + descripción
+  const negrita = String(text ?? '').trim().match(/^\*\*(.{2,80}?)\*\*\s*[:–—-]?\s+(.{15,})$/);
+  if (negrita) {
+    const nombre = cleanName(negrita[1]);
+    const descripcion = cleanDescription(negrita[2]);
+    if (nombre && descripcion) return { name: nombre, desc: descripcion };
+  }
+
   let value = stripMarkdownInline(text)
     .replace(/^[\s•▪▸◦‣*–—-]+/, '')
     .replace(/\s+/g, ' ')
@@ -1078,6 +1161,7 @@ function buildHeadingPairGroup(blocks) {
     if (block.level < 2 || block.level > 4) continue;
     if (genericHeading(block.text)) continue;
     if (block.text.length < 3 || block.text.length > 75) continue;
+    if (looksLikeSentence(block.text) || isWeakFeatureName(block.text)) continue;
 
     let nextIndex = i + 1;
     while (nextIndex < blocks.length && blocks[nextIndex].type === 'heading') break;
@@ -1101,13 +1185,13 @@ function buildBulletGroups(blocks) {
   blocks.forEach(block => {
     if (block.type !== 'bullet') return;
     if (!groups.has(block.group)) groups.set(block.group, []);
-    groups.get(block.group).push(block.text);
+    groups.get(block.group).push(block.raw || block.text);
   });
 
   const result = [];
   groups.forEach(rawItems => {
     const cleaned = rawItems
-      .map(item => item.replace(/\s+/g, ' ').trim())
+      .map(item => String(item).replace(/\s+/g, ' ').trim())
       .filter(item => item.length >= 8)
       .filter(item => !/^https?:\/\//i.test(item));
     if (cleaned.length < 2) return;
@@ -1174,6 +1258,9 @@ function extractFeatures(blocks, maxItems) {
     if (!name && !desc) return;
     if (desc && normalizeCompare(desc) === normalizeCompare(name)) desc = '';
     if (name && /^(leer m[aá]s|read more|ver m[aá]s|descargar|download|comprar|ir a|volver)$/i.test(name)) return;
+    if (name && isReviewMeta(name)) return;
+    if (name && isWeakFeatureName(name)) return;
+    if (name && isNavSection(name)) return;
     if (name && items.some(item => similarText(item.name, name) > 0.75)) return;
     if (!name && items.some(item => similarText(item.desc, desc) > 0.8)) return;
     const tagInfo = classifyTag(name, desc, items.length);
@@ -1226,6 +1313,10 @@ function normalizeSpecKey(key) {
   for (const [regex, normalized] of SPEC_KEY_RULES) {
     if (regex.test(cleaned) || (plain && regex.test(plain))) return normalized;
   }
+  // Claves rotas: restos de markdown, links o símbolos.
+  if (/[\[\](){}<>|/\\]|https?:|\]\s*\(/i.test(cleaned)) return '';
+  if (!/^[\p{L}\p{N}]/u.test(cleaned)) return '';
+
   const normalized = normalizeCompare(cleaned);
   if (!normalized || DENY_SPEC_KEYS.has(normalized)) return '';
   if (cleaned.length > 28) return '';
@@ -1287,6 +1378,9 @@ function extractSpecs({ text, blocks, meta, sourceUrl, type, maxSpecs }) {
     const normalizedKey = normalizeSpecKey(key);
     let normalizedValue = cleanSpecValue(value);
     if (!normalizedKey || !normalizedValue) return;
+    // Categorías de sitio, avisos y frases no son datos del producto.
+    if (/^(downloads?|posts?|descargas?|blog|news|noticias|uncategorized|general|otros?|varios)$/i.test(normalizedValue)) return;
+    if (wordCount(normalizedValue) > 16 && normalizedKey !== 'Requisitos') return;
     if (normalizedValue.length < 2) return;
     if (normalizedKey === 'Sitio web' && !/https?:\/\//i.test(normalizedValue)) normalizedValue = sourceUrl || normalizedValue;
     const same = specs.find(spec => spec.k === normalizedKey);
@@ -1303,7 +1397,10 @@ function extractSpecs({ text, blocks, meta, sourceUrl, type, maxSpecs }) {
 
   // 1) JSON-LD (muy confiable)
   if (ld.operatingSystem) add('Plataformas', ld.operatingSystem, 5);
-  if (ld.applicationCategory || ld.category) add('Género', ld.applicationCategory || ld.category, 5);
+  const genero = cleanSpace(ld.applicationCategory || ld.category || '');
+  if (genero && !/^(downloads?|posts?|descargas?|blog|news|noticias|uncategorized|general|otros?|varios)$/i.test(genero)) {
+    add('Género', genero, 5);
+  }
   if (ld.softwareVersion) add('Versión', ld.softwareVersion, 5);
   if (ld.fileFormat) add('Formatos', ld.fileFormat, 5);
   if (ld.price) add('Precio', formatPrice(ld.price, ld.priceCurrency), 5);
@@ -1341,9 +1438,11 @@ function extractSpecs({ text, blocks, meta, sourceUrl, type, maxSpecs }) {
   });
 
   // 3) Metadatos
-  if (meta.author && !specs.some(spec => spec.k === authorKey)) add(authorKey, meta.author, 2);
-  if (meta.published && !specs.some(spec => /Lanzamiento|Publicado/.test(spec.k))) {
-    add(type === 'news' ? 'Publicado' : 'Lanzamiento', formatDate(meta.published), 2);
+  const autorUtil = meta.author && normalizeCompare(meta.author) !== normalizeCompare(meta.siteName || '');
+  if (autorUtil && !specs.some(spec => spec.k === authorKey)) add(authorKey, meta.author, 2);
+  // La fecha de publicación de una nota es la de la nota, no la del producto.
+  if (type === 'news' && meta.published && !specs.some(spec => /Lanzamiento|Publicado/.test(spec.k))) {
+    add('Publicado', formatDate(meta.published), 2);
   }
 
   // 4) Detección inline
@@ -1397,7 +1496,7 @@ function extractSpecs({ text, blocks, meta, sourceUrl, type, maxSpecs }) {
     const price = text.match(/\b(?:precio|price|desde|cuesta|starting at)[^.\n]{0,24}?((?:USD|ARS|EUR|US\$|AR\$|\$|€)\s?\d[\d.,]*)/i);
     if (price) add('Precio', price[1].replace(/\s+/g, ' '), 2);
     else if (/\b(prueba gratuita|versi[oó]n demo|free trial|versi[oó]n de prueba)\b/i.test(text)) add('Precio', 'Prueba gratis', 1);
-    else if (/\b(gratis|gratuito|freeware|c[oó]digo abierto|open source)\b/i.test(text) && (type === 'software' || type === 'generic')) add('Precio', 'Gratis', 1);
+    else if (/(?:precio|price|cuesta|vale)\D{0,18}\b(gratis|gratuit[oa]|freeware|free)\b/i.test(text) && (type === 'software' || type === 'generic')) add('Precio', 'Gratis', 1);
   }
 
   if (!specs.some(spec => spec.k === 'Tamaño')) {
@@ -1453,11 +1552,29 @@ function linkKind(url, anchorText, sourceUrl) {
   if (BAD_LINK_PATTERNS.test(value) || BAD_LINK_PATTERNS.test(text)) return null;
   if (value.length > 500) return null;
 
+  const esForo = url => /\/(?:posts?|threads?|topics?|articulos?|foro|tema)\//i.test(url.pathname);
+  const esNota = url => /\/(?:news|blog|noticias|articles?|reviews?|features?|opinion|magazine)\//i.test(url.pathname);
+  const mismoSitio = sourceUrl ? hostOf(value) === hostOf(sourceUrl) : false;
+
+  // Otro post del mismo sitio (posts/423/…) es "relacionados": no sirve.
+  if (mismoSitio && !sameUrl(value, sourceUrl) && esForo(new URL(value))) return null;
+
+  // Una nota periodística no es una descarga, aunque su URL diga "download".
+  if (esNota(new URL(value)) && !sameUrl(value, sourceUrl)) return { kind: 'article', score: -10 };
+
   if (FILE_EXT.test(value)) return { kind: 'file', score: 125 };
   if (DOWNLOAD_HINT.test(combined)) return { kind: 'download', score: 110 };
   if (sameUrl(value, sourceUrl)) return { kind: 'source', score: 70 };
+
+  // Si la fuente es un post de foro, el resto de sus links es navegación del sitio.
+  if (mismoSitio && sourceUrl && esForo(new URL(sourceUrl))) {
+    return { kind: 'nav', score: -60 };
+  }
   if (DOCS_HINT.test(combined)) return { kind: 'docs', score: 55 };
   if (VIDEO_HINT.test(combined)) return { kind: 'video', score: 45 };
+  // Si la fuente es un post de foro, el resto de sus links es navegación.
+  if (mismoSitio && sourceUrl && esForo(new URL(sourceUrl))) return { kind: 'nav', score: -60 };
+
   const store = STORE_HOSTS.find(([, regex]) => regex.test(host));
   if (store) return { kind: 'store', score: 100, store: store[0] };
   if (host === hostOf(sourceUrl)) return { kind: 'official', score: 40 };
@@ -1499,7 +1616,34 @@ function makeLinkLabel(entry, kind, sourceUrl) {
   return raw || `Ver en ${domain}`;
 }
 
-function extractLinks({ text, meta, sourceUrl, type, maxButtons }) {
+/* Palabras significativas del título, para reconocer el sitio oficial. */
+const STOP_TOKENS = new Set(['para', 'como', 'este', 'esta', 'esto', 'estos', 'estas', 'desde', 'sobre',
+  'entre', 'cuando', 'todo', 'todos', 'toda', 'todas', 'pero', 'solo', 'sino', 'cosa', 'cosas', 'muy',
+  'mas', 'menos', 'cada', 'otro', 'otra', 'otros', 'otras', 'the', 'and', 'for', 'with', 'that', 'this']);
+
+function productTokens(title) {
+  return normalizeCompare(title || '')
+    .split(' ')
+    .filter(token => token.length >= 4 && !STOP_TOKENS.has(token))
+    .slice(0, 6);
+}
+
+/** Cuánto se parece un enlace al producto: el sitio oficial suma mucho. */
+function linkRelevance(url, label, tokens) {
+  if (!tokens.length) return 0;
+  const host = hostOf(url).replace(/[^a-z0-9]/g, '');
+  const texto = normalizeCompare(`${url} ${label || ''}`).replace(/ /g, '');
+  let score = 0;
+  tokens.forEach(token => {
+    const limpio = token.replace(/[^a-z0-9]/g, '');
+    if (limpio.length < 4) return;
+    if (host.includes(limpio)) score += 50;
+    else if (texto.includes(limpio)) score += 20;
+  });
+  return Math.min(score, 95);
+}
+
+function extractLinks({ text, meta, sourceUrl, type, maxButtons, keywords = [] }) {
   const collected = [];
   const add = (url, textValue, bonus = 0) => {
     const resolved = resolveUrl(url, sourceUrl || '');
@@ -1513,7 +1657,8 @@ function extractLinks({ text, meta, sourceUrl, type, maxButtons }) {
     if (!info) return;
 
     const kind = direct.changed && info.kind !== 'file' ? 'download' : info.kind;
-    const score = direct.changed ? Math.max(info.score, 118) : info.score;
+    const relevancia = linkRelevance(target, textValue, keywords);
+    const score = (direct.changed ? Math.max(info.score, 118) : info.score) + relevancia;
 
     const existing = collected.find(item => sameUrl(item.url, target));
     if (existing) {
@@ -1538,7 +1683,10 @@ function extractLinks({ text, meta, sourceUrl, type, maxButtons }) {
   extractMarkdownLinks(text).forEach(link => add(link.url, link.text, 2));
   extractRawUrls(text).forEach(url => add(url, '', 0));
 
-  if (sourceUrl) {
+  // Si algún enlace parece el sitio oficial del producto, el post de origen sobra.
+  const hayOficial = collected.some(item => item.score >= 60 && linkRelevance(item.url, item.text, keywords) >= 40);
+
+  if (sourceUrl && !hayOficial) {
     const sourceDirect = toDirectDownload(sourceUrl);
     const origin = sourceDirect.changed ? sourceDirect.url : sourceUrl;
     if (!collected.some(item => sameUrl(item.url, origin))) {
@@ -1561,9 +1709,21 @@ function extractLinks({ text, meta, sourceUrl, type, maxButtons }) {
 
   collected.sort((a, b) => b.score - a.score);
 
+  // Si hay un enlace claro del producto, el resto de la navegación sobra.
+  const relevante = item => linkRelevance(item.url, item.text, keywords) >= 50;
+  const UTIL = new Set(['download', 'file', 'store', 'source']);
+  let lista = collected;
+  if (collected.some(relevante)) {
+    const filtrada = collected.filter(item => relevante(item) || UTIL.has(item.kind));
+    if (filtrada.length) lista = filtrada;
+  }
+  // Mejor pocos enlaces buenos que completar con navegación del sitio.
+  const conCalidad = lista.filter(item => relevante(item) || UTIL.has(item.kind) || item.score >= 60);
+  if (conCalidad.length) lista = conCalidad;
+
   const chosen = [];
   const seenHosts = new Set();
-  for (const entry of collected) {
+  for (const entry of lista) {
     if (chosen.length >= maxButtons) break;
     if (chosen.some(item => sameUrl(item.url, entry.url))) continue;
     const host = hostOf(entry.url);
@@ -1650,6 +1810,10 @@ function pickParagraphs(blocks, title, type, maxParagraphs, priorityText = '') {
     if (normalizeCompare(text).includes(titleNorm)) score += 20;
     if (/\b(\d+%|\d{2,4}\s*(?:GB|MB|Hz|bits?|voces?|presets?)|precio|gratis|gratuito)\b/i.test(text)) score += 5;
     if (index < 3) score += 6;
+    // Se prefieren los párrafos en castellano; si todo viene en inglés, igual sirve.
+    const idioma = languageHint(text);
+    if (idioma === 'es') score += 14;
+    else if (idioma === 'en') score -= 14;
     if (priorityNorm) {
       const key = normalizeCompare(text).slice(0, 120);
       if (key.length > 30 && priorityNorm.includes(key)) score += 50;
@@ -1748,7 +1912,10 @@ function composeParagraphs({ chosen, title, description, type, tone, itemNames, 
     first = description || 'Reúne la información esencial, las características y los enlaces oficiales en un solo lugar.';
   }
 
-  if (!normalizeCompare(first).includes(titleNorm)) {
+  // No se agrega otro saludo si el párrafo ya arranca con uno.
+  const YA_SALUDA = /^\s*(?:hoy\s+(?:te|les)\s+traigo|(?:te|les)\s+traigo|(?:te|les)\s+presento|vamos\s+con|arrancamos\s+con|hoy\s+toca|se\s+viene|ac[aá]\s+ten[eé]s)/i;
+  const textoPlano = first.replace(/\[\[|\]\]/g, '').replace(/\*\*/g, '');
+  if (!normalizeCompare(first).includes(titleNorm) && !YA_SALUDA.test(textoPlano)) {
     const lead = pickSeeded(PARAGRAPH_LEADS[tone] || PARAGRAPH_LEADS.taringa, seed + ':lead').replace('{title}', title);
     first = `${lead} ${first}`;
   }
@@ -2035,7 +2202,8 @@ function analyze(input, options = {}) {
     seed: pick('seed'),
     sourceUrl: provided.sourceUrl || provided.url || inline.sourceUrl || inline.url || '',
     provider: pick('provider'),
-    priorityText: pick('priorityText')
+    priorityText: pick('priorityText'),
+    primaryTitle: pick('primaryTitle')
   };
   const tone = ['taringa', 'gamer', 'pro'].includes(opts.tone) ? opts.tone : 'taringa';
   const depth = opts.depth === 'rapido' ? 'rapido' : 'completo';
@@ -2083,13 +2251,13 @@ function analyze(input, options = {}) {
     throw new Error('No pudimos encontrar contenido útil en ese texto.');
   }
 
-  const title = pickTitle(meta, blocks, sourceUrl) || fallbackTitle(sourceUrl);
+  const title = pickTitle(meta, blocks, sourceUrl, { primaryTitle: opts.primaryTitle }) || fallbackTitle(sourceUrl);
   const type = detectType(text, meta);
   const description = pickDescription(meta, blocks, title, sourceUrl, type);
   const images = rankImages({ ...meta, baseUrl: sourceUrl }, text).map(image => image.url);
   const items = extractFeatures(blocks, maxItems);
   const specs = extractSpecs({ text, blocks, meta, sourceUrl, type, maxSpecs });
-  const buttons = extractLinks({ text, meta, sourceUrl, type, maxButtons });
+  const buttons = extractLinks({ text, meta, sourceUrl, type, maxButtons, keywords: productTokens(title) });
   const paragraphs = pickParagraphs(blocks, title, type, maxParagraphs, opts.priorityText || '');
   const seed = String(opts.seed || `${title}|${sourceUrl}|${Date.now() % 100000}`);
 

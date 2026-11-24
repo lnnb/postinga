@@ -978,9 +978,14 @@ async function gatherSources(rawInput, { signal, onStage, fallbackUrl = '' } = {
     || safeHttpUrl(fallbackUrl)
     || '';
 
+  // El título de la primera fuente que se pudo leer manda sobre el resto.
+  const primera = leidas[0] && leidas[0].result.meta ? leidas[0].result.meta : null;
+  const primaryTitle = primera ? (primera.ogTitle || primera.title || '') : '';
+
   return {
     payload: { text, meta },
     sourceUrl,
+    primaryTitle,
     pegado,
     priorityText: propios.join('\n\n'),
     provider: leidas.length ? leidas[0].result.provider : (metaPegada ? 'html' : 'texto'),
@@ -1074,11 +1079,11 @@ async function runCapture() {
     });
     if (signal.aborted) throw abortError();
 
-    const { payload, sourceUrl, provider, sources, pegado, priorityText } = gathered;
+    const { payload, sourceUrl, provider, sources, pegado, priorityText, primaryTitle } = gathered;
     setCaptureStatus('Detectando título, imágenes y características…');
     await nextTick(30);
 
-    const baseline = analyze(payload, { ...options, sourceUrl, provider, priorityText: priorityText || pegado || '' });
+    const baseline = analyze(payload, { ...options, sourceUrl, provider, primaryTitle, priorityText: priorityText || pegado || '' });
     if (signal.aborted) throw abortError();
 
     let post = baseline;

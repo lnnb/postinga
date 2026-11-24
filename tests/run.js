@@ -476,6 +476,79 @@ describe('Análisis (analyze.js)', () => {
 });
 
 /* ============================================================
+   Ruido de los sitios (menús, relacionados, notas)
+   ============================================================ */
+describe('Ruido de los sitios', () => {
+  test('reconoce secciones de navegación', () => {
+    ['Posts Relacionados', 'Artículos relacionados', 'Te puede interesar', 'Más de NauticBoy',
+     'Comentarios', 'Explorar', 'Este post', 'Related posts', 'Sidebar', 'Newsletter']
+      .forEach(label => equal(run(`isNavSection(${JSON.stringify(label)})`), true, `debería reconocer "${label}"`));
+  });
+
+  test('no confunde contenido real con navegación', () => {
+    ['Más de 700 pantallas', 'Modo asistido', 'Filtros analógicos', 'Profundidad', 'Nitidez']
+      .forEach(label => equal(run(`isNavSection(${JSON.stringify(label)})`), false, `no debería descartar "${label}"`));
+  });
+
+  test('los encabezados de review no son características', () => {
+    ['What is it', 'The web says', 'Our verdict', 'Conclusion', 'Introduction', 'Value for money']
+      .forEach(label => equal(run(`isReviewMeta(${JSON.stringify(label)})`), true, `debería reconocer "${label}"`));
+    equal(run(`isReviewMeta('Soft/hard mode')`), false);
+    equal(run(`isReviewMeta('Depth')`), false);
+  });
+
+  test('los links a otros posts del mismo foro no sirven', () => {
+    ctx.foro = 'https://taringas.net/posts/downloads/1129/oeksound-soothe-2-win-macos';
+    const otro = run(`linkKind('https://taringas.net/posts/downloads/423/davinci-resolve-studio-19', 'Descargar', foro)`);
+    equal(otro, null, 'un post relacionado debería descartarse');
+    const categoria = run(`linkKind('https://taringas.net/posts/downloads', 'Descargas', foro)`);
+    assert(!categoria || categoria.kind === 'nav', `la categoría del foro debería quedar como navegación: ${JSON.stringify(categoria)}`);
+  });
+
+  test('una nota periodística no se toma como descarga', () => {
+    const nota = run(`linkKind('https://www.musicradar.com/news/tech/free-music-samples-to-download', '95k free samples', 'https://taringas.net/posts/downloads/1129/x')`);
+    equal(nota.kind, 'article', 'debería clasificarse como nota');
+    assert(nota.score < 60, 'no debería competir con una descarga real');
+  });
+
+  test('el ruido de navegación no llega al post', () => {
+    ctx.htmlRuido = run(`build(normalizePostState({
+      hero: { title: 'Plugin de prueba', sub: 's', img: '', win: '' },
+      info: { win: '', greet: '', paras: '', hlTitle: '', hlText: '', listTitle: '', specTitle: '',
+        items: [], specs: [], },
+      links: { title: '', text: '', hide: true, btns: [] }
+    }))`);
+    const texto = [
+      '## Posts Relacionados',
+      '1 Disco de arranque Windows 11',
+      '2 Adobe Photoshop 2025',
+      '',
+      '## Filtros',
+      'Dos filtros analógicos de cuatro etapas con saturación no lineal y control de drive independiente por voz.',
+    ].join('\n');
+    const post = analyzeWith(`{ text: ${JSON.stringify(texto)} }`);
+    const nombres = post.info.items.map(item => item.name).join(' | ');
+    notIncludes(nombres, 'Posts Relacionados', 'la sección de relacionados no debería ser una característica');
+    includes(nombres, 'Filtros', `debería conservar el contenido real: ${nombres}`);
+  });
+
+  test('la fecha de la nota no es la fecha del producto', () => {
+    ctx.htmlConFecha = [
+      '<html><head><meta property="article:published_time" content="2026-11-23T20:50:40Z">',
+      '<title>Un review</title><meta property="og:title" content="Review del plugin">',
+      '<meta name="description" content="Repaso completo del producto con todos sus detalles y funciones principales.">',
+      '</head><body>',
+      '<p>Un producto cualquiera que hace cosas interesantes y tiene varias funciones que vale la pena repasar con detalle a lo largo de este análisis.</p>',
+      '<p>Además incluye herramientas de automatización que simplifican bastante el trabajo diario y ahorran tiempo en cada proyecto.</p>',
+      '</body></html>'
+    ].join('');
+    const post = analyzeWith(`{ html: htmlConFecha, sourceUrl: 'https://ejemplo.com/review' }`);
+    const claves = post.info.specs.map(spec => spec.k).join(' | ');
+    notIncludes(claves, 'Lanzamiento', `no debería inventar un lanzamiento: ${claves}`);
+  });
+});
+
+/* ============================================================
    Varias fuentes a la vez
    ============================================================ */
 describe('Varias fuentes a la vez (extract.js)', () => {
