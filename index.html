@@ -665,6 +665,15 @@
   <div class="sr-only" id="ariaLive" aria-live="polite"></div>
   <input type="file" id="fileInput" accept=".json,application/json" hidden>
 
+  <script>
+    // Habilita la instalación como app (Chrome lo exige). Sin caché: siempre red.
+    if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function () {});
+      });
+    }
+  </script>
+
   <script src="js/constants.js"></script>
   <script src="js/extract.js"></script>
   <script src="js/analyze.js"></script>

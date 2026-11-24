@@ -669,6 +669,17 @@ describe('Instalable (iconos y manifest)', () => {
     });
   });
 
+  test('el service worker existe y no cachea nada', () => {
+    const file = path.join(ROOT, 'sw.js');
+    assert(fs.existsSync(file), 'falta sw.js');
+    const sw = fs.readFileSync(file, 'utf8');
+    includes(sw, "addEventListener('install'", 'debería tener install');
+    includes(sw, "addEventListener('fetch'", 'necesita un handler de fetch para ser instalable');
+    notIncludes(sw, 'caches.open', 'no debería cachear: evitaría servir versiones viejas');
+    notIncludes(sw, 'cache.put', 'no debería guardar respuestas');
+    includes(html, "serviceWorker.register", 'la página debería registrarlo');
+  });
+
   test('el manifest funciona en una subcarpeta (GitHub Pages)', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.webmanifest'), 'utf8'));
     notIncludes(manifest.start_url, '/postinga', 'no debería tener la ruta absoluta del repo');
