@@ -51,11 +51,41 @@ const MIME = {
 
 const ALLOWED_TYPES = /^(?:text\/html|application\/xhtml\+xml|text\/plain|text\/markdown|application\/xml|text\/xml|application\/json)/i;
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
+const CORS_BASE = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Accept'
 };
+
+/* Cada respuesta conoce su request, para decidir el CORS sin cambiar las firmas. */
+const REQUEST_OF = new WeakMap();
+
+function isLocalOrigin(origin, req) {
+  try {
+    const parsed = new URL(origin);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname.replace(/^\[|\]$/g, '');
+    const esLocal = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1';
+    if (!esLocal) return false;
+    // Tiene que ser el mismo host y puerto que atiende este servidor.
+    const hostHeader = req && req.headers ? String(req.headers.host || '') : '';
+    if (hostHeader && parsed.host !== hostHeader) return false;
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+/* Solo se refleja el origen si es local: nada de "Access-Control-Allow-Origin: *". */
+function corsHeaders(res) {
+  const headers = { ...CORS_BASE };
+  const req = res ? REQUEST_OF.get(res) : null;
+  const origin = req && req.headers ? String(req.headers.origin || '') : '';
+  if (origin && isLocalOrigin(origin, req)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+    headers['Vary'] = 'Origin';
+  }
+  return headers;
+}
 
 /* ============================================================
    Respuestas
@@ -66,7 +96,7 @@ function sendJson(res, status, payload) {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),
     'Cache-Control': 'no-store',
-    ...CORS
+    ...corsHeaders(res)
   });
   res.end(body);
 }
@@ -75,7 +105,7 @@ function sendText(res, status, text) {
   res.writeHead(status, {
     'Content-Type': 'text/plain; charset=utf-8',
     'Cache-Control': 'no-store',
-    ...CORS
+    ...corsHeaders(res)
   });
   res.end(text);
 }
@@ -203,6 +233,8 @@ async function readBody(response, maxBytes) {
   if (declared > maxBytes) {
     throw new Error('La página es demasiado grande para procesarla.');
   }
+  if (!response.body) return Buffer.alloc(0);
+
   const chunks = [];
   let total = 0;
   for await (const chunk of response.body) {
@@ -261,6 +293,14 @@ async function fetchPage(rawUrl) {
         if (!location) throw new Error('La página redirige a una dirección inválida.');
         current = new URL(location, current);
         continue;
+      }
+
+      // Una página de error del sitio remoto no es contenido para analizar.
+      if (response.status >= 400) {
+        const error = new Error(`El sitio respondió ${response.status}.`);
+        error.code = 'HTTP_ERROR';
+        error.httpStatus = response.status;
+        throw error;
       }
 
       const contentType = response.headers.get('content-type') || 'text/html';
@@ -333,6 +373,7 @@ async function handleFetch(req, res, requestUrl) {
     return sendJson(res, status, {
       ok: false,
       code: error.code || 'FETCH_ERROR',
+      httpStatus: error.httpStatus || 0,
       error: error.message || 'No se pudo leer el enlace.'
     });
   }
@@ -388,6 +429,7 @@ function serveStatic(req, res, pathname) {
    Servidor
    ============================================================ */
 function requestHandler(req, res) {
+  REQUEST_OF.set(res, req);
   let requestUrl;
   try {
     requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -396,7 +438,7 @@ function requestHandler(req, res) {
   }
 
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, { ...CORS, 'Access-Control-Max-Age': '86400' });
+    res.writeHead(204, { ...corsHeaders(res), 'Access-Control-Max-Age': '86400' });
     return res.end();
   }
 

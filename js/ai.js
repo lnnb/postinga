@@ -12,7 +12,7 @@ const AI_DEFAULTS = {
   openaiModel: 'gpt-4o-mini'
 };
 
-const GEMINI_FALLBACKS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
+const GEMINI_FALLBACKS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
 
 function isLocalAiBase(base) {
   const value = String(base || '').trim();
@@ -81,6 +81,8 @@ function normalizeAiItems(items, baselineItems) {
     const name = aiText(item.name, 82);
     const desc = aiText(item.desc, 300);
     if (!name && !desc) return;
+    // Encabezados de reseña y secciones del sitio no son características.
+    if (name && (isReviewMeta(name) || isNavSection(name))) return;
     const dedupeKey = (name || desc).toLowerCase().slice(0, 40);
     if (seen.has(dedupeKey)) return;
     seen.add(dedupeKey);
@@ -111,6 +113,9 @@ function normalizeAiSpecs(specs, baselineSpecs) {
     const normalized = normalizeCompare(key);
     if (!normalized || seen.has(normalized)) return;
     if (/^(leer|ver|compartir|fuente|imagen|video|nota)$/.test(normalized)) return;
+    // Claves rotas (restos de markdown o links) y categorías de sitio.
+    if (/[\[\](){}<>|\\]|https?:/i.test(key)) return;
+    if (/^(downloads?|posts?|descargas?|blog|news|noticias|uncategorized|general|categorias?)$/i.test(normalized)) return;
     seen.add(normalized);
     result.push({ k: key, v: value });
   });
@@ -119,7 +124,7 @@ function normalizeAiSpecs(specs, baselineSpecs) {
   return result;
 }
 
-function normalizeAiLinks(links, baselineLinks, baseline, maxButtons) {
+function normalizeAiLinks(links, baselineLinks, baseline, maxButtons, excludedHosts = []) {
   const allowed = new Set();
   const addAllowed = url => {
     const safe = safeHttpUrl(url);
@@ -137,6 +142,8 @@ function normalizeAiLinks(links, baselineLinks, baseline, maxButtons) {
     const url = safeHttpUrl(button.url);
     if (!url) return;
     if (enforceAllowed && !allowed.has(url)) return;
+    const hostBoton = hostOf(url).replace(/^www\./i, '').toLowerCase();
+    if (excludedHosts.some(excl => hostBoton === excl || hostBoton.endsWith('.' + excl))) return;
     if (seen.has(url)) return;
     seen.add(url);
     const label = aiText(button.label, 58) || `Ver en ${hostOf(url)}`;
@@ -170,7 +177,10 @@ function mergeAiPost(ai, baseline, options = {}) {
   const paras = aiParagraphs(info.paras);
   const items = normalizeAiItems(info.items, bInfo.items);
   const specs = normalizeAiSpecs(info.specs, bInfo.specs);
-  const buttons = normalizeAiLinks(links.btns, bLinks, baseline, maxButtons);
+  const excludedHosts = (Array.isArray(options.excludedHosts) ? options.excludedHosts : [])
+    .map(host => String(host || '').replace(/^www\./i, '').toLowerCase())
+    .filter(Boolean);
+  const buttons = normalizeAiLinks(links.btns, bLinks, baseline, maxButtons, excludedHosts);
 
   const post = {
     hero: {
@@ -202,7 +212,36 @@ function mergeAiPost(ai, baseline, options = {}) {
   return finalizePost(post, noOpen);
 }
 
-function buildAiPrompt({ sourceText, baseline, options, type, sourceUrl, siteName }) {
+const SOURCE_ROLE_LABELS = {
+  user: '[APORTE DEL USUARIO]',
+  official: '[SITIO OFICIAL]',
+  review: '[RESEÑA]',
+  manual: '[MANUAL]',
+  forum: '[FORO]'
+};
+
+/* Material separado por rol. Acepta [{ role, text }] o { official: 'texto', … }. */
+function formatSourcesBreakdown(breakdown) {
+  if (!breakdown) return '';
+  const partes = [];
+  const agregar = (role, text) => {
+    const body = String(text || '').trim();
+    if (!body) return;
+    const clave = String(role || '').toLowerCase();
+    const label = SOURCE_ROLE_LABELS[clave] || `[${clave.toUpperCase() || 'FUENTE'}]`;
+    partes.push(`${label}\n${body.slice(0, 9000)}`);
+  };
+  if (Array.isArray(breakdown)) {
+    breakdown.forEach(item => {
+      if (item && typeof item === 'object') agregar(item.role, item.text);
+    });
+  } else if (typeof breakdown === 'object') {
+    Object.keys(breakdown).forEach(role => agregar(role, breakdown[role]));
+  }
+  return partes.join('\n\n');
+}
+
+function buildAiPrompt({ sourceText, baseline, options, type, sourceUrl, siteName, sourcesBreakdown }) {
   const tone = options.tone || 'taringa';
   const depth = options.depth === 'rapido' ? 'rapido' : 'completo';
   const noOpen = options.noOpen !== false;
@@ -247,7 +286,8 @@ function buildAiPrompt({ sourceText, baseline, options, type, sourceUrl, siteNam
     delete compactBaseline.source.fetchedAt;
   }
 
-  const source = String(sourceText || '').slice(0, 18000);
+  const porRol = formatSourcesBreakdown(sourcesBreakdown);
+  const source = (porRol || String(sourceText || '')).slice(0, 18000);
 
   return `Sos un editor de contenido experto en Taringa! y en redacción en español rioplatense.
 Tu tarea es reescribir y completar un post a partir del material fuente y de los datos ya detectados.
@@ -263,13 +303,18 @@ REGLAS OBLIGATORIAS
 - En "items" y "specs" no uses markdown. Escribí texto plano.
 - "tag": máximo 18 caracteres, en mayúsculas, representativa de la característica.
 - "color": elegí entre naranja, azul, rojo, amarillo, violeta, verde, rosa, gris. Variá los colores.
-- Generá entre ${depth === 'rapido' ? 3 : 3} y ${maxItems} ítems en "items". Cada "desc" debe tener 1 o 2 oraciones y no superar 260 caracteres.
+- Generá entre ${depth === 'rapido' ? 3 : 4} y ${maxItems} ítems en "items". Cada "desc" debe tener 1 o 2 oraciones y no superar 260 caracteres.
 - Generá entre 2 y ${maxSpecs} filas en "specs", solo con datos verificables del material.
 - "paras": ${maxParagraphs} párrafos como máximo, separados por \\n\\n. Cada párrafo de 2 a 4 oraciones.
 - En "links.btns" usá solo URLs que aparezcan en los datos detectados o en el material. No inventes enlaces. Máximo ${depth === 'rapido' ? 2 : 3} botones.
 - "hero.img": usá solo una URL de imagen presente en los datos detectados. Si no hay, devolvé "".
 - Si el material es escaso, priorizá calidad sobre cantidad: no rellenes con frases genéricas vacías.
 - El contenido tiene que quedar listo para publicar: coherente, en español y sin repetir la misma información en varios campos.
+- Escribí el 100% en español natural. Conservá marcas, nombres propios y términos técnicos tal cual, pero nada de frases en otro idioma.
+- Usá el MISMO nombre limpio del producto en todas las secciones: sin etiquetas de plataforma ni de descarga ([WIN/macOS], [Full], [Español], Free Download).
+- En "items" no pongas encabezados de reseña ("Verdict", "Pros and cons", "What is it") ni secciones del sitio ("Posts Relacionados", "Comentarios").
+- En "specs" no pongas fechas de la reseña ni categorías del foro (Downloads, Posts). Solo datos del producto.
+- En "links.btns" no pongas enlaces de registro, login, perfil ni otros posts del foro.
 
 ESQUEMA EXACTO
 ${JSON.stringify(schema, null, 2)}
@@ -308,10 +353,10 @@ async function requestGemini(prompt, { apiKey, model, signal }) {
     let response;
     try {
       response = await fetchWithTimeout(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             generationConfig: {
@@ -500,8 +545,8 @@ async function testAI(config, signal) {
     if (!key) return { ok: false, detail: 'Pegá tu API Key de Gemini.' };
     try {
       const response = await fetchWithTimeout(
-        'https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(key),
-        { headers: { Accept: 'application/json' } },
+        'https://generativelanguage.googleapis.com/v1beta/models',
+        { headers: { Accept: 'application/json', 'x-goog-api-key': key } },
         20000,
         signal
       );

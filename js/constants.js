@@ -326,10 +326,6 @@ function hostOf(value) {
   }
 }
 
-function isHttpUrl(value) {
-  return Boolean(safeHttpUrl(value));
-}
-
 function hexToRgba(hex, alpha = 1) {
   const clean = String(hex || '').replace('#', '');
   const full = clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean;
@@ -376,7 +372,7 @@ function palette(theme, accentId) {
 function fmt(value, paletteValue) {
   return esc(value)
     .replace(/\*\*([^*\n]+)\*\*/g, `<strong style="color: ${paletteValue.title}; font-weight: 700;">$1</strong>`)
-    .replace(/\[\[([^\]\n]+)\]\]/g, `<strong style="color: ${paletteValue.accent}; font-weight: 700;">$1</strong>`);
+    .replace(/\[\[((?:(?!\]\]).)+)\]\]/g, `<strong style="color: ${paletteValue.accent}; font-weight: 700;">$1</strong>`);
 }
 
 function stripOpen(value) {
@@ -474,10 +470,6 @@ function setP(object, path, value) {
 
 function uid(prefix = 'p') {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function uidNum() {
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
 function wordCount(value) {

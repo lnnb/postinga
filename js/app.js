@@ -156,6 +156,7 @@ const state = {
   copiedHelpLabel: '',
   imageChoice: '',
   attachments: [],
+  updateAbort: null,
   reader: { available: false, checked: false }
 };
 
@@ -720,6 +721,14 @@ function renderCapture() {
     chips.push(`<span class="summary-chip"><svg><use href="#i-sparkle"/></svg>${esc(aiEngineLabel(summary.provider))}</span>`);
     const kept = lockedSectionsLabel(S);
     if (kept) chips.push(`<span class="summary-chip"><svg><use href="#i-lock"/></svg>Se conservó: <b>${esc(kept)}</b></span>`);
+
+    auditPostCoherence(S).forEach(aviso => {
+      const boton = aviso.action
+        ? `<button type="button" class="summary-action" data-capture-action="${esc(aviso.action.id)}">${esc(aviso.action.label)}</button>`
+        : '';
+      chips.push(`<span class="summary-chip is-warn"><svg><use href="#${esc(aviso.icon)}"/></svg>${esc(aviso.text)}${boton}</span>`);
+    });
+
     summaryBox.hidden = false;
     summaryBox.innerHTML = `<span class="summary-source">Fuente: <b>${esc(summary.host || 'texto pegado')}</b></span>${chips.join('')}<button type="button" class="summary-action" data-capture-action="new">Pegar otro</button>`;
   } else {
@@ -730,6 +739,32 @@ function renderCapture() {
   renderLockHint();
   renderCaptureAlert();
   renderAttachments();
+}
+
+/* Avisos de coherencia antes de publicar. No bloquean: solo avisan. */
+function auditPostCoherence(post) {
+  const actual = post || S;
+  const avisos = [];
+
+  if (languageHint(actual.info.paras) === 'en') {
+    avisos.push({
+      id: 'idioma',
+      icon: 'i-alert',
+      text: 'El cuerpo quedó en inglés',
+      action: prefs.engine === 'local' ? { id: 'ajustes-ia', label: 'Activar IA' } : null
+    });
+  }
+
+  const hostDestino = hostOf(prefs.targetUrl);
+  if (hostDestino && (actual.links.btns || []).some(btn => hostOf(btn.url) === hostDestino)) {
+    avisos.push({ id: 'destino', icon: 'i-alert', text: `Hay un enlace a ${hostDestino}` });
+  }
+
+  if (!safeHttpUrl(actual.hero.img)) {
+    avisos.push({ id: 'imagen', icon: 'i-image', text: 'La portada no tiene imagen' });
+  }
+
+  return avisos;
 }
 
 function renderLockHint() {
@@ -831,11 +866,15 @@ function applyAnalysis(post, info = {}) {
   });
   state.dirty = true;
   state.pendingSourceUrl = '';
+  // Los archivos ya cumplieron su función: no se arrastran al próximo análisis.
+  state.attachments = [];
+  renderAttachments();
   savedAt = Date.now();
   writeJson(STORAGE.draft, S);
   const html = build(S);
   const stats = buildStats(html, S);
-  const host = cleanSpace(S.source.siteName) || hostOf(S.source.url) || 'texto pegado';
+  // Con varias fuentes, el nombre del sitio se toma del link principal.
+  const host = hostOf(S.source.url) || cleanSpace(S.source.siteName) || 'texto pegado';
   const fuentes = info.sources || { leidas: [], fallidas: [] };
   state.summary = {
     host,
@@ -945,9 +984,20 @@ async function gatherSources(rawInput, { signal, onStage, fallbackUrl = '' } = {
     }
   }
 
-  // Los metadatos del primer link mandan; el resto completa lo que falte.
+  // Cada fuente tiene un rol: el sitio oficial manda sobre la reseña y el foro.
+  const ROLE_PRIORITY = { official: 0, review: 1, manual: 2, forum: 3 };
+  const conRol = leidas.map(item => ({
+    ...item,
+    rol: classifySourceRole(item.result.finalUrl || item.url, prefs.targetUrl)
+  }));
+  const ordenMeta = [...conRol].sort((a, b) => {
+    const pa = ROLE_PRIORITY[a.rol] === undefined ? 9 : ROLE_PRIORITY[a.rol];
+    const pb = ROLE_PRIORITY[b.rol] === undefined ? 9 : ROLE_PRIORITY[b.rol];
+    return pa - pb;
+  });
+
   let meta = {};
-  leidas.forEach(item => { meta = mergeMeta(meta, item.result.meta); });
+  ordenMeta.forEach(item => { meta = mergeMeta(meta, item.result.meta); });
   if (metaPegada) meta = mergeMeta(metaPegada, meta);
 
   // Tus archivos adjuntos: cada uno entra como una fuente aparte.
@@ -978,21 +1028,36 @@ async function gatherSources(rawInput, { signal, onStage, fallbackUrl = '' } = {
     || safeHttpUrl(fallbackUrl)
     || '';
 
-  // El título de la primera fuente que se pudo leer manda sobre el resto.
+  // El título lo da la primera fuente que pegaste; el orden por rol es para
+  // que su imagen o su ficha no pisen las del sitio oficial.
   const primera = leidas[0] && leidas[0].result.meta ? leidas[0].result.meta : null;
   const primaryTitle = primera ? (primera.ogTitle || primera.title || '') : '';
+
+  // Material separado por rol, para que el motor de IA sepa qué es cada cosa.
+  const sourcesBreakdown = [];
+  if (propios.length) sourcesBreakdown.push({ role: 'user', text: propios.join('\n\n') });
+  conRol.forEach(item => {
+    const cuerpo = String(item.result.text || '').trim();
+    if (cuerpo.length > 20) sourcesBreakdown.push({ role: item.rol, text: cuerpo });
+  });
+  const sourceRole = ordenMeta[0] ? ordenMeta[0].rol : (metaPegada ? 'official' : 'user');
 
   return {
     payload: { text, meta },
     sourceUrl,
     primaryTitle,
+    sourceRole,
+    sourcesBreakdown,
+    allSourceUrls: urls,
+    excludedHosts: [hostOf(prefs.targetUrl)].filter(Boolean),
     pegado,
     priorityText: propios.join('\n\n'),
     provider: leidas.length ? leidas[0].result.provider : (metaPegada ? 'html' : 'texto'),
     sources: {
-      leidas: leidas.map(item => ({
+      leidas: conRol.map(item => ({
         url: item.result.finalUrl || item.url,
-        provider: item.result.provider
+        provider: item.result.provider,
+        role: item.rol
       })),
       fallidas,
       adjuntos: adjuntos.length,
@@ -1079,11 +1144,25 @@ async function runCapture() {
     });
     if (signal.aborted) throw abortError();
 
-    const { payload, sourceUrl, provider, sources, pegado, priorityText, primaryTitle } = gathered;
-    setCaptureStatus('Detectando título, imágenes y características…');
+    const {
+      payload, sourceUrl, provider, sources, pegado, priorityText, primaryTitle,
+      sourceRole, sourcesBreakdown, allSourceUrls, excludedHosts
+    } = gathered;
+    setCaptureStatus('Detectando título, imágenes y características...');
     await nextTick(30);
 
-    const baseline = analyze(payload, { ...options, sourceUrl, provider, primaryTitle, priorityText: priorityText || pegado || '' });
+    // Si la Portada está bloqueada, ese nombre manda en todo el post.
+    const tituloBloqueado = isSectionLocked(S, 'hero') ? cleanSpace(S.hero.title) : '';
+    const baseline = analyze(payload, {
+      ...options,
+      sourceUrl,
+      provider,
+      primaryTitle: tituloBloqueado || primaryTitle,
+      priorityText: priorityText || pegado || '',
+      sourceRole,
+      allSourceUrls,
+      excludedHosts
+    });
     if (signal.aborted) throw abortError();
 
     let post = baseline;
@@ -1094,8 +1173,9 @@ async function runCapture() {
       try {
         const result = await runAI({
           sourceText: payload.text || '',
+          sourcesBreakdown,
           baseline,
-          options,
+          options: { ...options, excludedHosts },
           config: {
             engine: prefs.engine,
             keys,
@@ -1110,7 +1190,10 @@ async function runCapture() {
         usedEngine = prefs.engine;
       } catch (error) {
         if (error && error.name === 'AbortError') throw error;
-        aiNote = `La IA no pudo completar la tarea; usé el motor local.`;
+        const motivo = error && error.message ? String(error.message).slice(0, 160) : 'error desconocido';
+        aiNote = `La IA no pudo completar la tarea (${motivo}); usé el motor local.`;
+        state.alert = { kind: 'info', text: `IA sin respuesta: ${motivo}` };
+        renderCaptureAlert();
       }
     }
 
@@ -1142,6 +1225,10 @@ function cancelCapture() {
 }
 
 function handleCaptureAction(action) {
+  if (action === 'ajustes-ia') {
+    openSettings('engine');
+    return;
+  }
   if (action === 'add-direct') {
     const pending = state.pendingDirect;
     if (!pending) return;
@@ -1550,7 +1637,7 @@ function togglePanel(key) {
   if (!panel) return;
   const open = state.panelOpen[key];
   panel.classList.toggle('open', open);
-  const button = panel.querySelector('.panel-head');
+  const button = panel.querySelector('.panel-toggle');
   if (button) button.setAttribute('aria-expanded', String(open));
   const body = panel.querySelector('.panel-body');
   if (body) body.inert = !open;
@@ -1868,6 +1955,11 @@ function openSheet(sheet, section) {
 
 function closeSheet(sheet) {
   if (!sheet) return;
+  // Si se cierra la hoja de actualización mientras trabaja, se cancela.
+  if (sheet.id === 'updateSheet' && state.updateAbort) {
+    try { state.updateAbort.abort(); } catch (error) { /* noop */ }
+    state.updateAbort = null;
+  }
   sheet.classList.remove('is-open');
   sheet.setAttribute('aria-hidden', 'true');
   if (state.activeSheet === sheet) state.activeSheet = null;
@@ -2015,42 +2107,54 @@ async function runLibraryUpdate() {
     return;
   }
 
-  const detected = detectInput(raw);
-  if (detected.kind === 'empty') return;
+  const fuentes = parseSources(raw);
+  if (fuentes.isEmpty) return;
 
   const button = $('#updateRun');
   button.disabled = true;
   button.classList.add('loading');
-  setUpdateStatus('Preparando…');
+  setUpdateStatus('Preparando...');
+
+  const controller = new AbortController();
+  state.updateAbort = controller;
 
   try {
-    if (detected.kind === 'url') {
-      const direct = toDirectDownload(detected.url);
+    if (fuentes.urls.length === 1 && !fuentes.text.trim()) {
+      const direct = toDirectDownload(fuentes.urls[0]);
       if (direct.service) {
         setUpdateStatus(`Ese enlace es una descarga de ${direct.service}, no una página con contenido para analizar.`, 'err');
         return;
       }
     }
 
-    let payload;
-    let sourceUrl = '';
-    if (detected.kind === 'url') {
-      setUpdateStatus('Leyendo el enlace…');
-      const fetched = await readUrl(detected.url, { onStage: text => setUpdateStatus(text) });
-      payload = { text: fetched.text, html: fetched.html, meta: fetched.meta };
-      sourceUrl = fetched.finalUrl || detected.url;
-    } else {
-      payload = { text: raw, html: detected.kind === 'html' ? raw : '', meta: null };
-    }
+    // Igual que el análisis principal: varios links, texto o HTML mezclados.
+    setUpdateStatus('Leyendo el enlace...');
+    const gathered = await gatherSources(raw, {
+      signal: controller.signal,
+      onStage: text => setUpdateStatus(text)
+    });
+    const {
+      payload, sourceUrl, provider, priorityText, pegado, primaryTitle, sourceRole,
+      sourcesBreakdown, allSourceUrls, excludedHosts
+    } = gathered;
 
-    setUpdateStatus('Analizando…');
+    setUpdateStatus('Analizando...');
     const options = {
       tone: prefs.tone,
       depth: prefs.depth,
       noOpen: prefs.noOpen,
       seed: `${Date.now()}-${Math.random().toString(36).slice(2)}`
     };
-    const baseline = analyze(payload, { ...options, sourceUrl });
+    const baseline = analyze(payload, {
+      ...options,
+      sourceUrl,
+      provider,
+      primaryTitle,
+      priorityText: priorityText || pegado || '',
+      sourceRole,
+      allSourceUrls,
+      excludedHosts
+    });
 
     let post = baseline;
     if (prefs.engine !== 'local' && aiHasKey(prefs.engine, keys, prefs.openaiBase)) {
@@ -2058,8 +2162,9 @@ async function runLibraryUpdate() {
       try {
         const result = await runAI({
           sourceText: payload.text || '',
+          sourcesBreakdown,
           baseline,
-          options,
+          options: { ...options, excludedHosts },
           config: {
             engine: prefs.engine,
             keys,
@@ -2101,8 +2206,13 @@ async function runLibraryUpdate() {
       action: { label: 'Abrir', fn: () => openLibraryEntry(entry.id) }
     });
   } catch (error) {
-    setUpdateStatus(error && error.message ? error.message : 'No se pudo actualizar el post.', 'err');
+    if (error && error.name === 'AbortError') {
+      setUpdateStatus('Actualización cancelada.');
+    } else {
+      setUpdateStatus(error && error.message ? error.message : 'No se pudo actualizar el post.', 'err');
+    }
   } finally {
+    state.updateAbort = null;
     button.disabled = false;
     button.classList.remove('loading');
   }
@@ -2784,6 +2894,8 @@ function bindEvents() {
   $('#updateInput').addEventListener('keydown', event => {
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
       event.preventDefault();
+      // Sin esto, el atajo global vuelve a disparar la misma acción.
+      event.stopPropagation();
       runLibraryUpdate();
     }
   });
@@ -2846,6 +2958,8 @@ function bindEvents() {
 
     const meta = event.metaKey || event.ctrlKey;
     if (!meta) return;
+    // Con una hoja abierta, los atajos globales no se disparan.
+    if (state.activeSheet) return;
     const key = event.key.toLowerCase();
     if (key === 'b') {
       event.preventDefault();

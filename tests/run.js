@@ -549,6 +549,146 @@ describe('Ruido de los sitios', () => {
 });
 
 /* ============================================================
+   Coherencia, estabilidad y seguridad
+   ============================================================ */
+describe('Coherencia y seguridad', () => {
+  test('fmt() tolera corchetes simples internos', () => {
+    ctx.fmtInterno = '[[Producto [Beta] y más]]';
+    const html = run('fmt(fmtInterno, palette())');
+    equal((html.match(/<strong/g) || []).length, 1, 'debería quedar un solo <strong>');
+    includes(html, 'Producto [Beta] y más', 'el corchete interno debería conservarse');
+    notIncludes(html, '[[', 'no debería quedar el marcador de apertura');
+  });
+
+  test('fmt() con etiqueta de plataforma no parte el resaltado', () => {
+    ctx.fmtPlataforma = '[[oeksound - Soothe 2 [WIN/macOS]]]';
+    const html = run('fmt(fmtPlataforma, palette())');
+    equal((html.match(/<strong/g) || []).length, 1, 'debería quedar un solo <strong>');
+    notIncludes(html, '[[', 'no debería quedar el marcador de apertura');
+    notIncludes(html, ']]', 'no debería quedar el marcador de cierre');
+  });
+
+  test('stripMarkdownInline() borra enlaces markdown vacíos', () => {
+    equal(run(`stripMarkdownInline('[](https://taringas.net/registro)Identificarme')`), 'Identificarme');
+    equal(run(`stripMarkdownInline('[](https://x.com/a)')`), '');
+  });
+
+  test('classifySourceRole() distingue cada rol', () => {
+    equal(run(`classifySourceRole('https://oeksound.com/')`), 'official', 'la raíz oficial');
+    equal(run(`classifySourceRole('https://www.musicradar.com/reviews/oeksound-soothe2')`), 'review', 'una reseña');
+    equal(run(`classifySourceRole('https://oeksound.com/manuals/soothe2/')`), 'manual', 'un manual');
+    equal(run(`classifySourceRole('https://oeksound.com/manuals/soothe2/#4-frequency')`), 'manual', 'un ancla numerada del manual');
+    equal(run(`classifySourceRole('https://ejemplo.com/posts/1129/x')`), 'forum', 'un post de foro');
+    equal(run(`classifySourceRole('https://taringas.net/cualquier-cosa', 'https://taringas.net')`), 'forum', 'el dominio destino manda');
+  });
+
+  test('buildBlocks() descarta una sección de navegación en negrita', () => {
+    ctx.navNegrita = [
+      '**Posts Relacionados**',
+      '1 Disco de arranque Windows 11',
+      '2 Adobe Photoshop 2025',
+      '',
+      '**Filtros**',
+      'Dos filtros analógicos de cuatro etapas con saturación no lineal y control de drive independiente.'
+    ].join('\n');
+    const bloques = run('buildBlocks(navNegrita).map(b => b.type + ":" + b.text).join(" | ")');
+    notIncludes(bloques, 'Posts Relacionados', 'el encabezado de navegación no debería quedar');
+    notIncludes(bloques, 'Adobe Photoshop', 'su listado tampoco');
+    includes(bloques, 'Filtros', 'el contenido real debería conservarse');
+  });
+
+  test('isReviewMeta() detecta encabezados con nombre de medio', () => {
+    equal(run(`isReviewMeta('MusicRadar Verdict')`), true, 'veredicto con medio');
+    equal(run(`isReviewMeta('Reasons to avoid')`), true, 'razones para evitarlo');
+    equal(run(`isReviewMeta('Reasons to buy')`), true, 'razones para comprarlo');
+    equal(run(`isReviewMeta('Pros and cons')`), true, 'pros y contras');
+    equal(run(`isReviewMeta('Soft/hard mode')`), false, 'una función real no es meta de reseña');
+    equal(run(`isReviewMeta('Depth')`), false, 'un parámetro real no es meta de reseña');
+  });
+
+  test('un post de foro no deja enlaces de categoría ni de registro', () => {
+    ctx.textoForo = 'Mira https://taringas.net/posts/downloads y https://taringas.net/registro y https://oeksound.com/downloads';
+    const urls = run(`extractLinks({
+      text: textoForo,
+      meta: {},
+      sourceUrl: 'https://taringas.net/posts/downloads/1129/oeksound-soothe-2',
+      type: 'software',
+      maxButtons: 3,
+      keywords: ['oeksound'],
+      allSourceUrls: ['https://taringas.net/posts/downloads/1129/oeksound-soothe-2']
+    }).map(b => b.url)`);
+    const junto = urls.join(' ');
+    notIncludes(junto, 'taringas.net', 'no debería quedar nada del foro');
+    includes(junto, 'oeksound.com/downloads', 'debería quedar el sitio oficial');
+  });
+
+  test('una categoría de foro nunca es el botón de descarga', () => {
+    // Si la fuente ya es un foro, el enlace se descarta del todo.
+    const enForo = run(`linkKind('https://taringas.net/posts/downloads', 'Descargas', 'https://taringas.net/posts/downloads/1129/x')`);
+    assert(!enForo || enForo.kind !== 'download', `no debería ser una descarga: ${JSON.stringify(enForo)}`);
+
+    // Si no lo es, igual queda marcado como navegación del sitio.
+    const enSitio = run(`linkKind('https://taringas.net/posts/downloads', 'Descargas', 'https://oeksound.com/')`);
+    assert(enSitio && enSitio.kind === 'nav', `debería ser navegación: ${JSON.stringify(enSitio)}`);
+  });
+
+  test('los hosts excluidos no llegan a los botones', () => {
+    ctx.textoDestino = 'Pasá por https://taringas.net/posts/downloads/1129/x y por https://oeksound.com/';
+    const urls = run(`extractLinks({
+      text: textoDestino,
+      meta: {},
+      sourceUrl: 'https://oeksound.com/',
+      type: 'software',
+      maxButtons: 3,
+      keywords: ['oeksound'],
+      excludedHosts: ['taringas.net']
+    }).map(b => b.url)`);
+    notIncludes(urls.join(' '), 'taringas.net', 'el dominio destino no debería aparecer');
+  });
+
+  test('la fecha de una reseña no es la fecha del producto', () => {
+    ctx.ldFecha = '<script type="application/ld+json">' + JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: 'Plugin X',
+      datePublished: '2024-05-01',
+      operatingSystem: 'Windows, macOS'
+    }) + '</script>';
+    ctx.htmlFecha = '<html><head><title>Plugin X</title>'
+      + '<meta name="description" content="Un plugin de mezcla con herramientas útiles para el trabajo diario de cualquier productor.">'
+      + ctx.ldFecha
+      + '</head><body>'
+      + '<p>Plugin X es una herramienta de mezcla que permite controlar resonancias y suavizar voces sin perder transientes en el proceso.</p>'
+      + '<p>Además incluye automatización que simplifica el trabajo diario y reduce el tiempo de edición en cada proyecto de audio.</p>'
+      + '</body></html>';
+
+    const oficial = run(`analyze({ html: htmlFecha }, { sourceRole: 'official' }).info.specs.map(s => s.k).join(' ')`);
+    includes(oficial, 'Lanzamiento', 'una fuente oficial sí puede fechar el producto');
+
+    const resena = run(`analyze({ html: htmlFecha }, { sourceRole: 'review' }).info.specs.map(s => s.k).join(' ')`);
+    notIncludes(resena, 'Lanzamiento', 'una reseña no fecha el producto');
+
+    const foro = run(`analyze({ html: htmlFecha }, { sourceRole: 'forum' }).info.specs.map(s => s.k).join(' ')`);
+    notIncludes(foro, 'Lanzamiento', 'un foro tampoco fecha el producto');
+  });
+
+  test('la vista previa va en un iframe aislado', () => {
+    const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    includes(html, 'id="pv" title="Vista previa del post" sandbox="allow-same-origin"', 'el iframe debería estar en modo arena');
+    notIncludes(html, 'allow-scripts', 'no debería permitir scripts en la vista previa');
+  });
+
+  test('la clave de Gemini viaja en la cabecera, no en la URL', () => {
+    const ai = fs.readFileSync(path.join(ROOT, 'js', 'ai.js'), 'utf8');
+    includes(ai, "'x-goog-api-key': apiKey", 'debería mandar la clave por cabecera');
+    notIncludes(ai, 'generateContent?key=', 'no debería poner la clave en la URL');
+    notIncludes(ai, 'models?key=', 'tampoco al listar modelos');
+    includes(ai, 'gemini-2.5-flash-lite', 'debería ofrecer el modelo vigente');
+    notIncludes(ai, 'gemini-2.0-flash', 'no debería quedar el modelo viejo');
+  });
+});
+
+/* ============================================================
    Varias fuentes a la vez
    ============================================================ */
 describe('Varias fuentes a la vez (extract.js)', () => {
@@ -1387,20 +1527,21 @@ describe('IA (ai.js)', () => {
 /* ============================================================
    Servidor (server.js)
    ============================================================ */
-function httpRequest(base, method, urlPath) {
+function httpRequest(base, method, urlPath, extraHeaders) {
   return new Promise(resolve => {
     const target = new URL(urlPath, base);
     const request = http.request({
       host: target.hostname,
       port: target.port,
       method,
-      path: target.pathname + target.search
+      path: target.pathname + target.search,
+      headers: extraHeaders || {}
     }, response => {
       let body = '';
       response.on('data', chunk => { body += chunk; });
-      response.on('end', () => resolve({ status: response.statusCode, body }));
+      response.on('end', () => resolve({ status: response.statusCode, body, headers: response.headers }));
     });
-    request.on('error', error => resolve({ status: 0, body: String(error.message) }));
+    request.on('error', error => resolve({ status: 0, body: String(error.message), headers: {} }));
     request.end();
   });
 }
@@ -1446,6 +1587,14 @@ describeAsync('Servidor (server.js)', async () => {
       const res = await httpRequest(base, 'GET', '/api/health');
       equal(res.status, 200);
       equal(JSON.parse(res.body).ok, true);
+    });
+
+    await testAsync('no refleja orígenes externos en CORS', async () => {
+      const malicioso = await httpRequest(base, 'GET', '/api/health', { Origin: 'https://sitio-malicioso.example' });
+      assert(!malicioso.headers['access-control-allow-origin'],
+        `no debería permitir un origen externo: ${malicioso.headers['access-control-allow-origin']}`);
+      const local = await httpRequest(base, 'GET', '/api/health', { Origin: base });
+      equal(local.headers['access-control-allow-origin'], base, 'debería reflejar el origen local');
     });
 
     await testAsync('sirve la aplicación y todos sus recursos', async () => {

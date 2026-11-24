@@ -116,7 +116,7 @@ const SOCIAL_HOSTS = [
   'threads.net', 'tumblr.com', 'discord.gg', 'discord.com'
 ];
 
-const BAD_LINK_PATTERNS = /\b(skip to|saltar al|ir al contenido|main content|contenido principal|back to top|volver arriba|breadcrumb|menu de|men[uú] principal|login|signin|sign-in|signup|sign-up|register|account|cart|checkout|privacy|terms|cookies|legal|newsletter|subscribe|unsubscribe|share|sharer|intent|logout|password|mailto:|javascript:|registro|registrate|registrarme|identificarme|ingresar|iniciar-sesion|acceder|mi-perfil|mi-cuenta)/i;
+const BAD_LINK_PATTERNS = /\b(skip to|saltar al|ir al contenido|main content|contenido principal|back to top|volver arriba|breadcrumb|menu de|men[uú] principal|login|signin|sign-in|signup|sign-up|register|account|cart|checkout|privacy|terms|cookies|legal|newsletter|subscribe|unsubscribe|share|sharer|intent|logout|password|mailto:|javascript:|registro|registrate|registrarme|identificarme|ingresar|iniciar-sesion|iniciar sesion|acceder|mi-perfil|mi-cuenta|mi cuenta)/i;
 const IMAGE_EXT = /\.(?:png|jpe?g|webp|avif|gif|svg|bmp|tiff)(?:\?|#|$)/i;
 const FILE_EXT = /\.(?:exe|dmg|pkg|msi|deb|rpm|apk|xapk|zip|rar|7z|tar|gz|iso|torrent|epub|pdf|mp3|flac|wav|mp4|mkv)(?:\?|#|$)/i;
 /* "free" y "gratis" sueltos son demasiado comunes: se exige contexto de descarga. */
@@ -351,9 +351,6 @@ function normalizeCompare(value) {
     .trim();
 }
 
-function escapeRegex(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 function isJunkLine(line) {
   const text = String(line ?? '').trim();
@@ -362,9 +359,6 @@ function isJunkLine(line) {
   return JUNK_LINE_PATTERNS.some(pattern => pattern.test(text));
 }
 
-function accentClean(value) {
-  return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-}
 
 const SPANISH_HINTS = new Set(['el', 'la', 'los', 'las', 'de', 'que', 'en', 'un', 'una', 'para', 'con',
   'es', 'se', 'del', 'por', 'no', 'mas', 'pero', 'sus', 'ya', 'este', 'porque', 'esta', 'entre', 'cuando',
@@ -517,8 +511,15 @@ function cleanDescription(value) {
 /* Encabezados de review que son metacomentario, no una característica. */
 const REVIEW_META_RE = /^(what is it|the web says|our verdict|verdict|conclusion|conclusions|introduction|overview|first impressions|sound quality|performance|value for money|value|should you buy|who is it for|the basics|summary|final thoughts|pros and cons|alternatives|specs|specifications|en resumen|veredicto|conclusion|introduccion|primeras impresiones|calidad de sonido|rendimiento|vale la pena|para quien es|resumen|ultimas palabras)$/i;
 
+/* Encabezados de reseña que aparecen pegados al nombre del medio:
+   "MusicRadar Verdict", "Reasons to avoid", "Pros and cons". */
+const REVIEW_META_LOOSE_RE = /(?:^|\b)(?:verdict|reasons to (?:buy|avoid)|pros and cons|what is it|the web says|our verdict)\b/i;
+
 function isReviewMeta(value) {
-  return REVIEW_META_RE.test(cleanSpace(value));
+  const text = cleanSpace(value);
+  if (REVIEW_META_RE.test(text)) return true;
+  if (text.length > 46) return false;
+  return REVIEW_META_LOOSE_RE.test(text);
 }
 
 function genericHeading(value) {
@@ -563,9 +564,6 @@ function looksLikeSpecValue(value) {
   return /(\bwindows\b|\bmacos\b|\blinux\b|\bandroid\b|\bios\b|\bvst[0-9i]*\b|\baax\b|\bau\b|\bram\b|\bmemoria\b|\bcpu\b|\bprocesador\b|\bgpu\b|\d+\s*(?:gb|mb|tb)\b|\bprecio\b|\busd\b|\beur\b|\bgratis\b|\blicencia\b)/i.test(text);
 }
 
-function safeRatio(part, whole) {
-  return whole ? Math.max(0, Math.min(1, part / whole)) : 0;
-}
 
 function similarText(a, b) {
   const left = new Set(normalizeCompare(a).split(' ').filter(word => word.length > 2));
@@ -591,10 +589,13 @@ function buildBlocks(text) {
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i].replace(/[ \t\f\v]+/g, ' ').trim();
 
-    // Dentro de una sección de navegación: se ignora hasta el próximo encabezado.
+    // Dentro de una sección de navegación: se ignora hasta el próximo encabezado,
+    // ya sea markdown (#) o en negrita (**), que es como los marca el foro.
     if (saltarHastaNivel) {
-      const nivel = rawLine.match(/^(#{1,6})\s+/);
-      if (nivel && nivel[1].length <= saltarHastaNivel) saltarHastaNivel = 0;
+      const nivelMd = rawLine.match(/^(#{1,6})\s+/);
+      const esNegrita = !nivelMd && /^\*\*(.{2,90}?)\*\*:?\s*$/.test(rawLine);
+      const nivel = nivelMd ? nivelMd[1].length : (esNegrita ? 3 : 0);
+      if (nivel && nivel <= saltarHastaNivel) saltarHastaNivel = 0;
       else continue;
     }
     if (!rawLine) {
@@ -663,7 +664,15 @@ function buildBlocks(text) {
 
     const boldHeading = rawLine.match(/^\*\*(.{2,90}?)\*\*:?\s*$/);
     if (boldHeading && !/[.!?]$/.test(boldHeading[1])) {
-      blocks.push({ type: 'heading', level: 3, text: stripMarkdownInline(boldHeading[1]), raw: boldHeading[1] });
+      const textValue = stripMarkdownInline(boldHeading[1]);
+      // "**Posts Relacionados**": igual que un encabezado, se saltea su listado.
+      if (isNavSection(textValue)) {
+        saltarHastaNivel = 3;
+        previous = null;
+        inGroup = false;
+        continue;
+      }
+      blocks.push({ type: 'heading', level: 3, text: textValue, raw: boldHeading[1] });
       previous = null;
       continue;
     }
@@ -801,6 +810,22 @@ function cleanTitle(value, siteName = '', sourceUrl = '') {
     if (rightIsSite && !leftIsSite) title = left;
     else if (leftIsSite && !rightIsSite) title = right;
   }
+
+  // Etiquetas típicas de foros y publicaciones de descarga.
+  title = title
+    .replace(/\s*[[(【]\s*(?:win(?:dows)?|mac(?:os)?|pc|linux|full|espa[nñ]ol|multi(?:lenguaje)?|crack(?:ed)?|keygen|serial|portable|repack|torrent|iso|zip|rar|free|gratis|premium|v\d+(?:\.\d+)*|\d+(?:\.\d+)*)\s*(?:[/|]\s*(?:win(?:dows)?|mac(?:os)?|pc|linux|full|espa[nñ]ol|multi(?:lenguaje)?|free|gratis))*\s*[)\]]/gi, ' ')
+    .replace(/\s*[[(]\s*(?:win|mac|pc|linux)\s*[/|]\s*(?:win|mac|pc|linux)\s*[)\]]/gi, ' ')
+    .replace(/\s*[|]\s*(?:full|free download|download|descarga|review|rese[nñ]a|espa[nñ]ol|full version)\s*$/gi, '')
+    .replace(/\s*[–—-]\s*(?:free download|full version|descarga gratis)\s*$/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  // Sufijos sueltos ("… Review", "… Free Download") siempre que quede título.
+  const sinSufijo = title
+    .replace(/\s*[–—-]?\s*(?:review|rese[nñ]a|an[aá]lisis|free download|descarga gratis|full version|full)\s*$/i, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (sinSufijo.length >= 4) title = sinSufijo;
 
   title = title
     .replace(/\s*[|•»›]\s*$/g, '')
@@ -976,7 +1001,6 @@ function pickDescription(meta, blocks, title, sourceUrl, type) {
 
   candidates.sort((a, b) => b.score - a.score);
   let description = candidates[0].value;
-  if (candidates[0].score < 70) description = candidates[0].value;
   description = description.replace(/\s+/g, ' ').trim();
   if (description.length > 185) description = clipAtBoundary(description, 178, '…');
   if (!/[.!?…]$/.test(description) && !description.endsWith('…')) description += '.';
@@ -1124,10 +1148,6 @@ function splitFeature(text) {
   return { name: '', desc: cleanDescription(value) };
 }
 
-function maybeLocalizePair(name, desc) {
-  if (NAME_TRANSLATIONS[normalizeCompare(name)]) return NAME_TRANSLATIONS[normalizeCompare(name)];
-  return name;
-}
 
 function classifyTag(name, desc, index) {
   const text = `${name} ${desc}`;
@@ -1369,7 +1389,7 @@ function formatPrice(price, currency) {
   return `${symbol}${number.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`.trim();
 }
 
-function extractSpecs({ text, blocks, meta, sourceUrl, type, maxSpecs }) {
+function extractSpecs({ text, blocks, meta, sourceUrl, type, maxSpecs, sourceRole = '' }) {
   const specs = [];
   const seen = new Set();
   const ld = meta.ld || {};
@@ -1405,7 +1425,12 @@ function extractSpecs({ text, blocks, meta, sourceUrl, type, maxSpecs }) {
   if (ld.fileFormat) add('Formatos', ld.fileFormat, 5);
   if (ld.price) add('Precio', formatPrice(ld.price, ld.priceCurrency), 5);
   if (ld.rating) add('Puntuación', `${ld.rating}${ld.ratingCount ? ` (${formatNumber(ld.ratingCount)} votos)` : ''}`, 4);
-  if (ld.datePublished) add(type === 'news' ? 'Publicado' : 'Lanzamiento', formatDate(ld.datePublished), 4);
+  // La fecha de una reseña o de un post de foro no es la del producto.
+  const fechaConfiable = sourceRole !== 'forum' && sourceRole !== 'review';
+  if (ld.datePublished) {
+    if (type === 'news') add('Publicado', formatDate(ld.datePublished), 4);
+    else if (fechaConfiable) add('Lanzamiento', formatDate(ld.datePublished), 4);
+  }
   const authorKey = type === 'news' || type === 'book' ? 'Autor' : type === 'music' ? 'Artista' : type === 'movie' ? 'Dirección' : 'Desarrollador';
   if (ld.publisher || ld.author) add(authorKey, ld.publisher || ld.author, 4);
   if (ld.language) add('Idioma', formatLanguage(ld.language), 3);
@@ -1540,7 +1565,7 @@ function cleanLinkLabel(value) {
     .trim();
 }
 
-function linkKind(url, anchorText, sourceUrl) {
+function linkKind(url, anchorText, sourceUrl, forumHosts = null) {
   const value = String(url || '');
   const text = String(anchorText || '');
   const host = hostOf(value);
@@ -1549,35 +1574,47 @@ function linkKind(url, anchorText, sourceUrl) {
   if (!safeHttpUrl(value)) return null;
   if (IMAGE_EXT.test(value)) return null;
   if (SOCIAL_HOSTS.some(social => host === social || host.endsWith('.' + social))) return null;
-  if (BAD_LINK_PATTERNS.test(value) || BAD_LINK_PATTERNS.test(text)) return null;
+  // También sin tildes: "Regístrate" o "Iniciar sesión".
+  if (BAD_LINK_PATTERNS.test(value) || BAD_LINK_PATTERNS.test(text)
+      || BAD_LINK_PATTERNS.test(normalizeCompare(value)) || BAD_LINK_PATTERNS.test(normalizeCompare(text))) return null;
   if (value.length > 500) return null;
 
-  const esForo = url => /\/(?:posts?|threads?|topics?|articulos?|foro|tema)\//i.test(url.pathname);
-  const esNota = url => /\/(?:news|blog|noticias|articles?|reviews?|features?|opinion|magazine)\//i.test(url.pathname);
+  const parsed = new URL(value);
+  const esForo = url => ROLE_FORUM_PATH.test(url.pathname);
+  const esNota = url => ROLE_REVIEW_PATH.test(url.pathname);
   const mismoSitio = sourceUrl ? hostOf(value) === hostOf(sourceUrl) : false;
+  const segmentos = parsed.pathname.split('/').filter(Boolean);
 
-  // Otro post del mismo sitio (posts/423/…) es "relacionados": no sirve.
-  if (mismoSitio && !sameUrl(value, sourceUrl) && esForo(new URL(value))) return null;
+  // Otro post del mismo sitio (posts/423/...) es "relacionados": no sirve.
+  if (mismoSitio && !sameUrl(value, sourceUrl) && esForo(parsed)) return null;
+
+  // Categorías y navegación de foro (/posts/downloads, /registro): nunca son el
+  // botón de descarga, aunque la palabra "download" aparezca en la ruta.
+  if (!sameUrl(value, sourceUrl) && esForo(parsed) && segmentos.length <= 2) {
+    return { kind: 'nav', score: -60 };
+  }
+
+  // Enlaces de un foro que ya conocemos, distintos de su propia fuente.
+  if (forumHosts && forumHosts.size && !sameUrl(value, sourceUrl)) {
+    const limpio = host.replace(/^www\./i, '');
+    for (const foro of forumHosts) {
+      if (limpio === foro || limpio.endsWith('.' + foro)) return null;
+    }
+  }
 
   // Una nota periodística no es una descarga, aunque su URL diga "download".
-  if (esNota(new URL(value)) && !sameUrl(value, sourceUrl)) return { kind: 'article', score: -10 };
+  if (esNota(parsed) && !sameUrl(value, sourceUrl)) return { kind: 'article', score: -10 };
 
   if (FILE_EXT.test(value)) return { kind: 'file', score: 125 };
   if (DOWNLOAD_HINT.test(combined)) return { kind: 'download', score: 110 };
   if (sameUrl(value, sourceUrl)) return { kind: 'source', score: 70 };
 
-  // Si la fuente es un post de foro, el resto de sus links es navegación del sitio.
-  if (mismoSitio && sourceUrl && esForo(new URL(sourceUrl))) {
-    return { kind: 'nav', score: -60 };
-  }
   if (DOCS_HINT.test(combined)) return { kind: 'docs', score: 55 };
   if (VIDEO_HINT.test(combined)) return { kind: 'video', score: 45 };
-  // Si la fuente es un post de foro, el resto de sus links es navegación.
-  if (mismoSitio && sourceUrl && esForo(new URL(sourceUrl))) return { kind: 'nav', score: -60 };
 
   const store = STORE_HOSTS.find(([, regex]) => regex.test(host));
   if (store) return { kind: 'store', score: 100, store: store[0] };
-  if (host === hostOf(sourceUrl)) return { kind: 'official', score: 40 };
+  if (sourceUrl && host === hostOf(sourceUrl)) return { kind: 'official', score: 40 };
   return { kind: 'other', score: 20 };
 }
 
@@ -1643,8 +1680,22 @@ function linkRelevance(url, label, tokens) {
   return Math.min(score, 95);
 }
 
-function extractLinks({ text, meta, sourceUrl, type, maxButtons, keywords = [] }) {
+function extractLinks({ text, meta, sourceUrl, type, maxButtons, keywords = [], excludedHosts = [], allSourceUrls = [] }) {
   const collected = [];
+
+  // Hosts de foro conocidos: sus enlaces internos no sirven como botón.
+  const forumHosts = new Set();
+  const excluidos = (Array.isArray(excludedHosts) ? excludedHosts : [])
+    .map(host => String(host || '').replace(/^www\./i, '').toLowerCase())
+    .filter(Boolean);
+  const fuentes = (Array.isArray(allSourceUrls) ? allSourceUrls : []).filter(Boolean);
+  if (sourceUrl && !fuentes.includes(sourceUrl)) fuentes.push(sourceUrl);
+  fuentes.forEach(url => {
+    if (classifySourceRole(url) !== 'forum') return;
+    const host = hostOf(url).replace(/^www\./i, '').toLowerCase();
+    if (host) forumHosts.add(host);
+  });
+
   const add = (url, textValue, bonus = 0) => {
     const resolved = resolveUrl(url, sourceUrl || '');
     if (!resolved) return;
@@ -1653,7 +1704,11 @@ function extractLinks({ text, meta, sourceUrl, type, maxButtons, keywords = [] }
     // directa, así el botón baja el archivo de una.
     const direct = toDirectDownload(resolved);
     const target = direct.changed ? direct.url : resolved;
-    const info = linkKind(target, textValue, sourceUrl);
+
+    const hostDestino = hostOf(target).replace(/^www\./i, '').toLowerCase();
+    if (excluidos.some(excl => hostDestino === excl || hostDestino.endsWith('.' + excl))) return;
+
+    const info = linkKind(target, textValue, sourceUrl, forumHosts);
     if (!info) return;
 
     const kind = direct.changed && info.kind !== 'file' ? 'download' : info.kind;
@@ -1702,8 +1757,7 @@ function extractLinks({ text, meta, sourceUrl, type, maxButtons, keywords = [] }
       });
     } else {
       const existing = collected.find(item => sameUrl(item.url, sourceUrl));
-      existing.score += 20;
-      if (existing.kind === 'file' || existing.kind === 'download') existing.kind = existing.kind;
+      if (existing) existing.score += 20;
     }
   }
 
@@ -1782,7 +1836,10 @@ function extractLinks({ text, meta, sourceUrl, type, maxButtons, keywords = [] }
 /* ============================================================
    Párrafos y copy
    ============================================================ */
-function pickParagraphs(blocks, title, type, maxParagraphs, priorityText = '') {
+/* Definición aislada de un parámetro de manual. */
+const MANUAL_DEF_RE = /^(?:[A-ZÁÉÍÓÚÑ][\wáéíóúñ\s]{2,30})\s+(?:controls?|determines?|adjusts?|sets?|changes?|defines?|specifies?|regulates?|is used to|allows you to)\b/i;
+
+function pickParagraphs(blocks, title, type, maxParagraphs, priorityText = '', sourceRole = '') {
   const titleNorm = normalizeCompare(title);
   // Lo que pegaste a mano tiene ventaja: es tu aporte, no el de la página.
   const priorityNorm = priorityText ? normalizeCompare(priorityText) : '';
@@ -1810,6 +1867,11 @@ function pickParagraphs(blocks, title, type, maxParagraphs, priorityText = '') {
     if (normalizeCompare(text).includes(titleNorm)) score += 20;
     if (/\b(\d+%|\d{2,4}\s*(?:GB|MB|Hz|bits?|voces?|presets?)|precio|gratis|gratuito)\b/i.test(text)) score += 5;
     if (index < 3) score += 6;
+    // Se prefieren los párrafos que explican qué es, sobre definiciones sueltas
+    // de un manual ("Depth controls how much processing is applied…").
+    const esDescriptivo = /\b(?:es un[ao]?|se trata de|consiste en|sirve para|est[aá] dise[ñn]ad|permite|works by|is a|is an|designed to)\b/i.test(text);
+    if (esDescriptivo) score += (sourceRole === 'manual' || sourceRole === 'review') ? 14 : 8;
+    if (MANUAL_DEF_RE.test(text)) score -= 12;
     // Se prefieren los párrafos en castellano; si todo viene en inglés, igual sirve.
     const idioma = languageHint(text);
     if (idioma === 'es') score += 14;
@@ -1981,7 +2043,10 @@ function composePost(data) {
   const nombreUtil = item => Boolean(item.name)
     && item.name.length >= 4
     && !NON_FEATURE_NAMES.test(item.name)
-    && !isSectionLabel(item.name);
+    && !isSectionLabel(item.name)
+    && !isReviewMeta(item.name)
+    && !isNavSection(item.name)
+    && !looksLikeSentence(item.name);
   const destacados = items.filter(nombreUtil);
   const datosClave = specs.filter(spec => ['Formatos', 'Plataformas', 'Precio', 'Versión', 'Desarrollador'].includes(spec.k));
   const lead = pickSeeded(HIGHLIGHT_LEADS[tone] || HIGHLIGHT_LEADS.taringa, seed + ':hltext');
@@ -2203,7 +2268,10 @@ function analyze(input, options = {}) {
     sourceUrl: provided.sourceUrl || provided.url || inline.sourceUrl || inline.url || '',
     provider: pick('provider'),
     priorityText: pick('priorityText'),
-    primaryTitle: pick('primaryTitle')
+    primaryTitle: pick('primaryTitle'),
+    excludedHosts: pick('excludedHosts'),
+    allSourceUrls: pick('allSourceUrls'),
+    sourceRole: pick('sourceRole')
   };
   const tone = ['taringa', 'gamer', 'pro'].includes(opts.tone) ? opts.tone : 'taringa';
   const depth = opts.depth === 'rapido' ? 'rapido' : 'completo';
@@ -2256,9 +2324,18 @@ function analyze(input, options = {}) {
   const description = pickDescription(meta, blocks, title, sourceUrl, type);
   const images = rankImages({ ...meta, baseUrl: sourceUrl }, text).map(image => image.url);
   const items = extractFeatures(blocks, maxItems);
-  const specs = extractSpecs({ text, blocks, meta, sourceUrl, type, maxSpecs });
-  const buttons = extractLinks({ text, meta, sourceUrl, type, maxButtons, keywords: productTokens(title) });
-  const paragraphs = pickParagraphs(blocks, title, type, maxParagraphs, opts.priorityText || '');
+  const specs = extractSpecs({ text, blocks, meta, sourceUrl, type, maxSpecs, sourceRole: opts.sourceRole });
+  const buttons = extractLinks({
+    text,
+    meta,
+    sourceUrl,
+    type,
+    maxButtons,
+    keywords: productTokens(title),
+    excludedHosts: Array.isArray(opts.excludedHosts) ? opts.excludedHosts : [],
+    allSourceUrls: Array.isArray(opts.allSourceUrls) ? opts.allSourceUrls : []
+  });
+  const paragraphs = pickParagraphs(blocks, title, type, maxParagraphs, opts.priorityText || '', opts.sourceRole || '');
   const seed = String(opts.seed || `${title}|${sourceUrl}|${Date.now() % 100000}`);
 
   const post = composePost({

@@ -302,7 +302,7 @@
 
           <div class="preview-stage" id="previewStage">
             <div class="post-frame" id="postFrame">
-              <iframe id="pv" title="Vista previa del post"></iframe>
+              <iframe id="pv" title="Vista previa del post" sandbox="allow-same-origin"></iframe>
               <div class="preview-empty" id="previewEmpty">
                 <div class="empty-orb"><svg><use href="#i-sparkle"/></svg></div>
                 <h3>Tu post va a aparecer acá</h3>
@@ -430,9 +430,8 @@
               <span class="select-wrap">
                 <select id="geminiModel">
                   <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                  <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
                   <option value="gemini-flash-latest">Gemini Flash (último)</option>
-                  <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                  <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
                 </select>
               </span>
             </div>

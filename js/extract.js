@@ -46,10 +46,10 @@ function stripMarkdownInline(value) {
   return collapse(
     decodeEntities(String(value ?? '')
       .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/\[([^\]]*)\]\([^)]+\)/g, '$1')
       .replace(/<[^>]*>/g, ' ')
       .replace(/[*_`~#>]+/g, '')
-      .replace(/\[\[([^\]]+)\]\]/g, '$1'))
+      .replace(/\[\[((?:(?!\]\]).)+)\]\]/g, '$1'))
   );
 }
 
@@ -131,6 +131,47 @@ function toDirectDownload(rawUrl) {
 function isDirectDownload(url) {
   const result = toDirectDownload(url);
   return Boolean(result.service) && !result.changed;
+}
+
+/* ============================================================
+   Rol de cada fuente
+   Sirve para que un foro o una reseña no pisen los datos del sitio oficial.
+   ============================================================ */
+function isLocalHostname(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '').trim();
+  if (!host) return false;
+  if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1') return true;
+  if (host.startsWith('127.')) return true;
+  return host.endsWith('.local');
+}
+
+const ROLE_FORUM_PATH = /\/(?:posts?|threads?|topics?|articulos?|foro|tema|registro)\b/i;
+const ROLE_REVIEW_PATH = /\/(?:reviews?|analisis|resenas?|news|blog|noticias|articles?|opinion|magazine)\b/i;
+const ROLE_MANUAL_PATH = /\/(?:manuals?|docs?|documentation|guides?|wiki|help|reference|kb)\b/i;
+
+function classifySourceRole(rawUrl, targetUrl = '') {
+  const url = safeHttpUrl(rawUrl);
+  if (!url) return 'official';
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (error) {
+    return 'official';
+  }
+
+  const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+  const destino = safeHttpUrl(targetUrl);
+  if (destino) {
+    const hostDestino = hostOf(destino).toLowerCase();
+    if (hostDestino && (host === hostDestino || host.endsWith('.' + hostDestino))) return 'forum';
+  }
+
+  if (ROLE_FORUM_PATH.test(parsed.pathname)) return 'forum';
+  if (ROLE_REVIEW_PATH.test(parsed.pathname)) return 'review';
+  if (ROLE_MANUAL_PATH.test(parsed.pathname)) return 'manual';
+  if (/^#\d+[-_]/i.test(parsed.hash)) return 'manual';
+  return 'official';
 }
 
 function sameUrl(a, b) {
@@ -635,7 +676,10 @@ async function checkLocalReader(force = false) {
   if (!force && READER_STATE.promise && now - READER_STATE.checkedAt < 30000) {
     return READER_STATE.promise;
   }
-  const canCheck = typeof location !== 'undefined' && /^https?:$/.test(location.protocol);
+  // En GitHub Pages o cualquier host público no existe /api/health: no se pide.
+  const canCheck = typeof location !== 'undefined'
+    && /^https?:$/.test(location.protocol)
+    && isLocalHostname(location.hostname);
   if (!canCheck) {
     READER_STATE.available = false;
     READER_STATE.version = '';
@@ -695,6 +739,8 @@ async function tryLocalReader(url, context) {
     if (!response.ok) return null;
     const data = await response.json();
     if (!data || !data.ok) return null;
+    // El sitio remoto respondió 404/500: no es contenido para analizar.
+    if (data.status && data.status >= 400) return null;
     const finalUrl = resolveUrl(data.finalUrl || data.url || url, '') || url;
 
     if (data.html && data.html.length >= 120) {
