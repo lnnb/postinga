@@ -260,6 +260,19 @@ const HIGHLIGHT_LEADS = {
   pro: ['Aspectos destacados:', 'Puntos clave:', 'Lo más relevante:']
 };
 
+/* Cómo se titula la ventana de información, según lo que se haya detectado. */
+const INFO_WINDOW_LABELS = {
+  software: 'Ficha técnica',
+  hardware: 'Ficha técnica',
+  game: 'Ficha del juego',
+  movie: 'Ficha de la película',
+  music: 'Ficha del disco',
+  book: 'Ficha del libro',
+  tutorial: 'Guía paso a paso',
+  news: 'Resumen',
+  generic: 'Información'
+};
+
 const SPEC_ORDER = ['Formatos', 'Plataformas', 'Requisitos', 'Hardware', 'Procesador', 'Memoria', 'Almacenamiento', 'Tamaño', 'Precio', 'Licencia', 'Desarrollador', 'Autor', 'Artista', 'Dirección', 'Lanzamiento', 'Publicado', 'Género', 'Clasificación', 'Duración', 'Jugadores', 'Idioma', 'Versión', 'Puntuación', 'Sitio web', 'Modelo', 'Colores'];
 
 const NAME_TRANSLATIONS = {
@@ -631,7 +644,15 @@ function isWindowArtifact(value) {
 }
 
 function isBadTitle(value) {
-  return badTitle(value) || isSectionLabel(value) || isWindowArtifact(value);
+  if (badTitle(value) || isSectionLabel(value) || isWindowArtifact(value)) return true;
+  // "Duración: 166 minutos" es una fila de la ficha, no un título.
+  const specLine = cleanSpace(value).match(/^([^:：]{2,28})\s*[:：]\s*(.+)$/);
+  if (specLine) {
+    const rawKey = cleanSpace(specLine[1]);
+    const plainKey = normalizeCompare(rawKey);
+    if (SPEC_KEY_RULES.some(([regex]) => regex.test(rawKey) || (plainKey && regex.test(plainKey)))) return true;
+  }
+  return false;
 }
 
 function badTitle(value) {
@@ -716,16 +737,20 @@ function pickTitle(meta, blocks, sourceUrl) {
   // En texto pegado a mano, la primera línea corta y sin punto final suele ser el
   // título. Va por encima de los subtítulos posteriores (## Osciladores, ## Filtros…).
   const firstBlock = blocks[0];
+  // En un bloque "Nombre: descripción" se usa la línea original, sin el punto
+  // que agrega la limpieza, para no descartar un título válido.
+  const firstLine = firstBlock && firstBlock.type === 'feature'
+    ? (firstBlock.raw || firstBlock.text)
+    : (firstBlock ? firstBlock.text : '');
   if (
     firstBlock &&
-    (firstBlock.type === 'paragraph' || firstBlock.type === 'heading') &&
-    firstBlock.text.length >= 3 &&
-    firstBlock.text.length <= 100 &&
-    !/^https?:\/\//i.test(firstBlock.text) &&
-    !/[.!?…:]$/.test(firstBlock.text) &&
-    !genericHeading(firstBlock.text)
+    firstLine.length >= 3 &&
+    firstLine.length <= 100 &&
+    !/^https?:\/\//i.test(firstLine) &&
+    !/[.!?…:]$/.test(firstLine) &&
+    !genericHeading(stripMarkdownInline(firstLine))
   ) {
-    push(firstBlock.text, 100);
+    push(firstLine, 100);
   }
 
   // Antes de rendirse con los comodines, se intenta deducir el producto del cuerpo.
@@ -1159,8 +1184,9 @@ function extractFeatures(blocks, maxItems) {
 function normalizeSpecKey(key) {
   const cleaned = cleanSpace(String(key ?? '')).replace(/:+$/, '').replace(/\s*[–—-]\s*$/, '').trim();
   if (!cleaned) return '';
+  const plain = normalizeCompare(cleaned);
   for (const [regex, normalized] of SPEC_KEY_RULES) {
-    if (regex.test(cleaned)) return normalized;
+    if (regex.test(cleaned) || (plain && regex.test(plain))) return normalized;
   }
   const normalized = normalizeCompare(cleaned);
   if (!normalized || DENY_SPEC_KEYS.has(normalized)) return '';
@@ -1718,6 +1744,7 @@ function composePost(data) {
   const copy = copyForType(type);
   const shortTitle = clipAtBoundary(title, 52, '');
   const isPro = tone === 'pro';
+  const infoLabel = INFO_WINDOW_LABELS[type] || INFO_WINDOW_LABELS.generic;
 
   const greetTemplate = pickSeeded(GREETINGS[tone] || GREETINGS.taringa, seed + ':greet');
   const greet = greetTemplate.replace('{title}', title);
@@ -1726,9 +1753,15 @@ function composePost(data) {
     ? (type === 'software' ? 'Funcionalidades principales' : type === 'game' ? 'Características del juego' : copy.list[2] || copy.list[0])
     : pickSeeded(copy.list, seed + ':list');
 
-  const specTitle = isPro
+  let specTitle = isPro
     ? (type === 'game' ? 'Especificaciones técnicas' : copy.specs[1] || copy.specs[0])
     : pickSeeded(copy.specs, seed + ':spec');
+
+  // Si la ventana ya dice "Ficha técnica", el bloque de dentro usa otra variante.
+  if (normalizeCompare(specTitle) === normalizeCompare(infoLabel)) {
+    const alternativa = copy.specs.find(opcion => normalizeCompare(opcion) !== normalizeCompare(infoLabel));
+    if (alternativa) specTitle = alternativa;
+  }
 
   const highlightTitleBase = pickSeeded(copy.highlight, seed + ':hl');
   const hlTitle = question(highlightTitleBase, noOpen);
@@ -1754,18 +1787,7 @@ function composePost(data) {
   const linksTitleBase = hasDownload ? pickSeeded(copy.cta, seed + ':cta-title') : (isPro ? 'Enlaces y fuente oficial' : 'Sitio oficial y más info');
   const linksText = pickSeeded(copy.ctaText, seed + ':cta-text');
 
-  const infoPrefix = {
-    software: 'Información de',
-    game: 'Guía de',
-    movie: 'Ficha de',
-    music: 'Ficha de',
-    book: 'Ficha de',
-    hardware: 'Ficha de',
-    tutorial: 'Guía de',
-    news: 'Resumen de',
-    generic: 'Información de'
-  }[type] || 'Información de';
-  const infoTitle = shortTitle ? `${infoPrefix} ${shortTitle}.rtf` : 'Información del post.rtf';
+  const infoTitle = shortTitle ? `${infoLabel} — ${shortTitle}` : infoLabel;
   const heroWin = `${clipAtBoundary(title, 66, '…')} — Vista previa`;
 
   const paras = composeParagraphs({

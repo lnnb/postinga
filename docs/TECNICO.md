@@ -138,14 +138,27 @@ terminaba siendo el título del post nuevo.
 
 Las barras de ventana se arman con ese título:
 
-| Ventana | Texto |
-| --- | --- |
-| Portada | `<título> — Vista previa` |
-| Información | `<prefijo según tipo> <título>.rtf` |
+| Ventana | Texto | Ejemplo |
+| --- | --- | --- |
+| Portada | `<título> — Vista previa` | `oeksound soothe2 — Vista previa` |
+| Información | `<etiqueta según tipo> — <título>` | `Ficha técnica — oeksound soothe2` |
 
-El prefijo de la ventana de información cambia con el tipo detectado: *Información de* (software),
-*Guía de* (juegos y tutoriales), *Ficha de* (películas, música, libros, hardware), *Resumen de*
-(noticias).
+La etiqueta de la ventana de información sale de `INFO_WINDOW_LABELS` y cambia con el tipo
+detectado:
+
+| Tipo | Etiqueta |
+| --- | --- |
+| software · hardware | Ficha técnica |
+| game | Ficha del juego |
+| movie | Ficha de la película |
+| music | Ficha del disco |
+| book | Ficha del libro |
+| tutorial | Guía paso a paso |
+| news | Resumen |
+| generic | Información |
+
+El bloque de la ficha que va dentro de esa ventana evita repetir la etiqueta: si la barra dice
+"Ficha técnica", el bloque usa "Requisitos y compatibilidad".
 
 ### Páginas que se arman con JavaScript
 

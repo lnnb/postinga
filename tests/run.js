@@ -525,9 +525,42 @@ describe('Títulos y barras de ventana', () => {
 
   test('la barra de información cambia según el tipo de contenido', () => {
     const software = analyzeWith(`{ html: htmlFixture, sourceUrl: 'https://www.lennardigital.com/sylenth1/' }`);
-    matches(software.info.win, /^Información de /, `software: ${software.info.win}`);
+    matches(software.info.win, /^Ficha técnica — /, `software: ${software.info.win}`);
     const juego = analyzeWith(`{ text: jinaFixture, sourceUrl: 'https://ejemplo.com/celeste' }`);
-    matches(juego.info.win, /^Guía de /, `juego: ${juego.info.win}`);
+    matches(juego.info.win, /^Ficha del juego — /, `juego: ${juego.info.win}`);
+  });
+
+  test('la barra de información ya no usa nombres de archivo', () => {
+    const software = analyzeWith(`{ html: htmlFixture, sourceUrl: 'https://www.lennardigital.com/sylenth1/' }`);
+    notIncludes(software.info.win, '.rtf', 'no debería quedar el sufijo .rtf');
+    includes(software.info.win, software.hero.title.slice(0, 8), 'debería incluir el título detectado');
+    notIncludes(software.info.win, '👋', 'no debería contener emojis de separador');
+  });
+
+  test('la ventana y el bloque de ficha no dicen lo mismo', () => {
+    const post = analyzeWith(`{ html: htmlFixture, sourceUrl: 'https://www.lennardigital.com/sylenth1/' }`);
+    const barra = run(`normalizeCompare(${JSON.stringify(post.info.win.split('—')[0])})`);
+    const bloque = run(`normalizeCompare(${JSON.stringify(post.info.specTitle)})`);
+    assert(barra !== bloque, `la barra ("${post.info.win}") y el bloque ("${post.info.specTitle}") no deberían repetirse`);
+  });
+
+  test('una fila de ficha nunca es el título', () => {
+    const texto = 'Duración: 166 minutos\n\nEsta película de ciencia ficción continúa la historia de Paul Atreides en el planeta Arrakis con un reparto enorme y efectos visuales que llenan la pantalla.';
+    const post = analyzeWith(`{ text: ${JSON.stringify(texto)} }`);
+    notIncludes(post.hero.title, 'Duración', 'no debería tomar la fila de la ficha como título');
+  });
+
+  test('un título con dos puntos se conserva', () => {
+    const texto = 'Sylenth1: el sintetizador que no pasa de moda\n\nEste sintetizador analógico virtual combina una interfaz clara con un motor de sonido pensado para el productor exigente y sigue siendo referencia en estudios de todo el mundo.';
+    const post = analyzeWith(`{ text: ${JSON.stringify(texto)} }`);
+    includes(post.hero.title, 'Sylenth1', `debería conservar el título: ${post.hero.title}`);
+  });
+
+  test('las claves de la ficha se reconocen con o sin tilde', () => {
+    equal(run(`normalizeSpecKey('Duración')`), 'Duración');
+    equal(run(`normalizeSpecKey('duracion')`), 'Duración');
+    equal(run(`normalizeSpecKey('Tamaño')`), 'Tamaño');
+    equal(run(`normalizeSpecKey('tamano')`), 'Tamaño');
   });
 
   test('los nombres con versión también sirven de título', () => {

@@ -137,7 +137,7 @@ const DEF = {
     sub: 'Sintetizador analógico virtual VSTi / AU / AAX con más de 2500 presets.'
   },
   info: {
-    win: 'Información del sintetizador.rtf',
+    win: 'Ficha técnica — LennarDigital Sylenth1',
     greet: 'Qué hacés, maquinola del diseño sonoro.',
     paras: 'Pocos sintetizadores de software lograron estar a la altura de la calidez y la calidad sonora de un equipo analógico real, y [[LennardDigital Sylenth1]] es uno de ellos. Pensado desde el punto de vista del productor, combina una interfaz intuitiva con una pegada que sigue marcando el ritmo en la música electrónica y urbana.\n\nHoy te traigo el repaso completo por el **Sylenth1**, una bestia polifónica de 16 notas capaz de disparar hasta **512 voces de oscilador y 32 filtros en tiempo real** sin despeinar el procesador de tu PC o Mac.',
     hlTitle: 'Por qué sigue siendo un estándar en el estudio?',
