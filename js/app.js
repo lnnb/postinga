@@ -551,17 +551,21 @@ function deleteLibraryEntry(id) {
    Captura inteligente
    ============================================================ */
 function detectLabel(value) {
-  const detected = detectInput(value);
-  if (detected.kind === 'empty') return { html: 'Esperando contenido', kind: 'empty' };
-  if (detected.kind === 'url') {
-    return { html: `Link detectado · ${hostOf(detected.url) || 'sitio'}`, kind: 'url' };
+  const parsed = parseSources(value);
+  const resto = String(parsed.text || '').trim();
+  const partes = [];
+
+  if (parsed.urls.length === 1) partes.push(`1 link · ${hostOf(parsed.urls[0]) || 'sitio'}`);
+  else if (parsed.urls.length > 1) partes.push(`${parsed.urls.length} links`);
+  if (resto) {
+    partes.push(looksLikeHtml(resto) ? 'HTML pegado' : `${formatNumber(wordCount(resto))} palabras`);
   }
-  if (detected.kind === 'html') {
-    return { html: `HTML detectado · ${formatNumber(wordCount(value))} palabras`, kind: 'html' };
-  }
-  const words = wordCount(value);
-  const suffix = detected.url ? ` · fuente ${hostOf(detected.url)}` : '';
-  return { html: `Texto detectado · ${formatNumber(words)} palabras${suffix}`, kind: 'text' };
+
+  if (!partes.length) return { html: 'Esperando contenido', kind: 'empty' };
+  return {
+    html: partes.join(' + '),
+    kind: parsed.urls.length ? 'url' : (looksLikeHtml(resto) ? 'html' : 'text')
+  };
 }
 
 function refreshDetection() {
@@ -591,7 +595,10 @@ function renderCapture() {
 
   const summary = state.summary;
   if (summary) {
-    const parts = [`Completado desde ${summary.host || 'el contenido'}`];
+    const origen = summary.fuentes > 1
+      ? `${summary.fuentes} fuentes`
+      : (summary.host || 'el contenido');
+    const parts = [`Completado desde ${origen}`];
     if (summary.items) parts.push(`${summary.items} ${summary.items === 1 ? 'característica' : 'características'}`);
     $('#captureSub').textContent = parts.join(' · ');
   } else if (state.analyzing) {
@@ -599,12 +606,14 @@ function renderCapture() {
   } else if (min) {
     $('#captureSub').textContent = 'Tocá para pegar un link o texto';
   } else {
-    $('#captureSub').textContent = 'Pegá un link o el texto completo';
+    $('#captureSub').textContent = 'Pegá links, texto o HTML: podés mezclarlos';
   }
 
   const summaryBox = $('#captureSummary');
   if (summary) {
     const chips = [];
+    if (summary.fuentes > 1) chips.push(`<span class="summary-chip"><svg><use href="#i-globe"/></svg><b>${summary.fuentes}</b> fuentes</span>`);
+    if (summary.fallidas) chips.push(`<span class="summary-chip"><svg><use href="#i-alert"/></svg>${summary.fallidas} sin leer</span>`);
     if (summary.items) chips.push(`<span class="summary-chip"><svg><use href="#i-layers"/></svg><b>${summary.items}</b> características</span>`);
     if (summary.specs) chips.push(`<span class="summary-chip"><svg><use href="#i-tag"/></svg><b>${summary.specs}</b> datos</span>`);
     if (summary.links) chips.push(`<span class="summary-chip"><svg><use href="#i-link"/></svg><b>${summary.links}</b> enlaces</span>`);
@@ -682,7 +691,7 @@ function resetCapture(forNew = false) {
   state.alert = null;
   state.pendingSourceUrl = '';
   $('#captureInput').value = '';
-  $('#captureInput').placeholder = 'Pegá un link (https://…) o todo el texto con la información del post…';
+  $('#captureInput').placeholder = 'Pegá uno o varios links, texto o HTML. Todo junto sirve: se combina solo…';
   refreshDetection();
   renderCapture();
   if (forNew) {
@@ -725,12 +734,15 @@ function applyAnalysis(post, info = {}) {
   const html = build(S);
   const stats = buildStats(html, S);
   const host = cleanSpace(S.source.siteName) || hostOf(S.source.url) || 'texto pegado';
+  const fuentes = info.sources || { leidas: [], fallidas: [] };
   state.summary = {
     host,
     items: stats.items,
     specs: stats.specs,
     links: stats.buttons,
-    provider: info.engine || 'local'
+    provider: info.engine || 'local',
+    fuentes: fuentes.leidas.length,
+    fallidas: fuentes.fallidas.length
   };
   state.captureMin = true;
   state.alert = null;
@@ -773,6 +785,90 @@ function applyAnalysis(post, info = {}) {
   });
 }
 
+/**
+ * Reúne todo lo que haya en el recuadro: uno o varios links, texto pegado
+ * y/o HTML. Los links se leen y después todo se combina en una sola fuente.
+ */
+async function gatherSources(rawInput, { signal, onStage, fallbackUrl = '' } = {}) {
+  const parsed = parseSources(rawInput);
+  const leidas = [];
+  const fallidas = [];
+  const maxLinks = 3;
+
+  for (const url of parsed.urls.slice(0, maxLinks)) {
+    if (signal && signal.aborted) {
+      const abort = new Error('Lectura cancelada.');
+      abort.name = 'AbortError';
+      throw abort;
+    }
+    try {
+      if (onStage) onStage(`Leyendo ${hostOf(url)}…`);
+      const result = await readUrl(url, { signal, onStage });
+      leidas.push({ url, result });
+    } catch (error) {
+      if (error && error.name === 'AbortError') throw error;
+      fallidas.push({ url, message: error && error.message ? error.message : 'No se pudo leer.' });
+    }
+  }
+
+  if (parsed.urls.length && !leidas.length) {
+    const error = new Error(fallidas[0] ? fallidas[0].message : 'No se pudo leer ningún enlace.');
+    error.retryWithText = true;
+    throw error;
+  }
+
+  // Lo que se pegó además de los links (texto suelto o HTML).
+  let pegado = '';
+  let metaPegada = null;
+  const resto = String(parsed.text || '').trim();
+  if (resto) {
+    if (looksLikeHtml(resto)) {
+      metaPegada = extractMeta(resto, leidas[0] ? leidas[0].result.finalUrl : '');
+      pegado = htmlToText(resto);
+    } else if (/^Title:\s/mi.test(resto) && /Markdown Content:/i.test(resto)) {
+      const reader = parseReaderMarkdown(resto, '');
+      metaPegada = reader.meta;
+      pegado = reader.text;
+    } else {
+      pegado = resto;
+    }
+  }
+
+  // Los metadatos del primer link mandan; el resto completa lo que falte.
+  let meta = {};
+  leidas.forEach(item => { meta = mergeMeta(meta, item.result.meta); });
+  if (metaPegada) meta = mergeMeta(metaPegada, meta);
+
+  // Lo que pegás a mano va primero: es tu aporte y manda sobre lo leído.
+  const textos = [];
+  if (pegado.length > 20) textos.push(pegado);
+  leidas.forEach(item => {
+    if (item.result.text && item.result.text.length > 20) textos.push(item.result.text);
+  });
+  const text = textos.join('\n\n');
+
+  const sourceUrl = (leidas[0] && (leidas[0].result.finalUrl || leidas[0].url))
+    || parsed.urls[0]
+    || safeHttpUrl(fallbackUrl)
+    || '';
+
+  return {
+    payload: { text, meta },
+    sourceUrl,
+    pegado,
+    provider: leidas.length ? leidas[0].result.provider : (metaPegada ? 'html' : 'texto'),
+    sources: {
+      leidas: leidas.map(item => ({
+        url: item.result.finalUrl || item.url,
+        provider: item.result.provider
+      })),
+      fallidas,
+      palabrasPegadas: wordCount(pegado),
+      esHtml: Boolean(resto) && looksLikeHtml(resto)
+    }
+  };
+}
+
 async function runCapture() {
   if (state.analyzing) return;
   const raw = captureInput.value.trim();
@@ -780,8 +876,13 @@ async function runCapture() {
     captureInput.focus();
     return;
   }
-  const detected = detectInput(raw);
-  if (detected.kind === 'empty') return;
+  const fuentes = parseSources(raw);
+  if (fuentes.isEmpty) return;
+  const detected = {
+    kind: fuentes.urls.length ? 'url' : (fuentes.isHtml ? 'html' : 'text'),
+    url: fuentes.urls[0] || '',
+    reseñas: fuentes.urls.length
+  };
 
   if (prefs.engine !== 'local' && !aiHasKey(prefs.engine, keys, prefs.openaiBase)) {
     toast(`Configurá la API Key de ${aiEngineLabel(prefs.engine)} antes de analizar.`, { type: 'warn' });
@@ -792,8 +893,8 @@ async function runCapture() {
   const forced = state.forceAnalyze === true;
   state.forceAnalyze = false;
 
-  if (detected.kind === 'url' && !forced) {
-    const direct = toDirectDownload(detected.url);
+  if (!forced && fuentes.urls.length === 1 && !fuentes.text.trim()) {
+    const direct = toDirectDownload(fuentes.urls[0]);
     if (direct.service) {
       state.alert = {
         info: true,
@@ -833,31 +934,18 @@ async function runCapture() {
   };
 
   try {
-    let sourceUrl = detected.url || state.pendingSourceUrl || '';
-    let payload;
-    let provider = 'texto';
-
-    if (detected.kind === 'url') {
-      setCaptureStatus('Leyendo el enlace…');
-      const fetched = await readUrl(detected.url, { signal, onStage: setCaptureStatus });
-      if (signal.aborted) throw abortError();
-      payload = { text: fetched.text, html: fetched.html, meta: fetched.meta };
-      sourceUrl = fetched.finalUrl || detected.url;
-      provider = fetched.provider;
-      setCaptureStatus('Estructurando los campos…');
-    } else if (detected.kind === 'html') {
-      payload = { text: raw, html: raw, meta: null };
-      provider = 'html';
-    } else {
-      payload = { text: raw, html: '', meta: null };
-      provider = 'texto';
-    }
-
+    const gathered = await gatherSources(raw, {
+      signal,
+      onStage: setCaptureStatus,
+      fallbackUrl: state.pendingSourceUrl
+    });
     if (signal.aborted) throw abortError();
+
+    const { payload, sourceUrl, provider, sources, pegado } = gathered;
     setCaptureStatus('Detectando título, imágenes y características…');
     await nextTick(30);
 
-    const baseline = analyze(payload, { ...options, sourceUrl, provider });
+    const baseline = analyze(payload, { ...options, sourceUrl, provider, priorityText: pegado || '' });
     if (signal.aborted) throw abortError();
 
     let post = baseline;
@@ -891,7 +979,7 @@ async function runCapture() {
     if (signal.aborted) throw abortError();
     setAnalyzing(false);
     state.abort = null;
-    applyAnalysis(post, { provider, aiNote, engine: usedEngine });
+    applyAnalysis(post, { provider, aiNote, engine: usedEngine, sources });
   } catch (error) {
     state.abort = null;
     setAnalyzing(false);
@@ -1822,6 +1910,7 @@ async function runLibraryUpdate() {
       tone: prefs.tone,
       depth: prefs.depth,
       noOpen: prefs.noOpen,
+      priorityText: pegado || '',
       seed: `${Date.now()}-${Math.random().toString(36).slice(2)}`
     };
     const baseline = analyze(payload, { ...options, sourceUrl });

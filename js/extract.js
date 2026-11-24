@@ -542,6 +542,57 @@ function extractRawUrls(text) {
 }
 
 /* ============================================================
+   Varias fuentes a la vez
+   El recuadro acepta una mezcla: uno o más links sueltos, texto pegado
+   y/o HTML. Esto separa cada cosa para poder leerlas y combinarlas.
+   ============================================================ */
+const DOMAIN_ONLY = /^(?:[\w-]+\.)+[a-z]{2,}(?:\/\S*)?$/i;
+
+function parseSources(raw) {
+  const source = String(raw ?? '').replace(/\r\n?/g, '\n');
+  const urls = [];
+  const rest = [];
+
+  source.split('\n').forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      rest.push('');
+      return;
+    }
+
+    // Una línea que es solo un link
+    if (/^https?:\/\/\S+$/i.test(trimmed)) {
+      const safe = safeHttpUrl(trimmed);
+      if (safe) {
+        urls.push(safe);
+        return;
+      }
+    }
+
+    // Una línea que es solo un dominio (ejemplo.com/algo)
+    if (DOMAIN_ONLY.test(trimmed) && trimmed.length <= 200 && !trimmed.includes(' ')) {
+      const safe = safeHttpUrl('https://' + trimmed);
+      if (safe) {
+        urls.push(safe);
+        return;
+      }
+    }
+
+    rest.push(line);
+  });
+
+  const text = rest.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const unique = [...new Set(urls)];
+
+  return {
+    urls: unique,
+    text,
+    isHtml: Boolean(text) && looksLikeHtml(text),
+    isEmpty: !unique.length && !text
+  };
+}
+
+/* ============================================================
    Lectura de URLs
    ============================================================ */
 const READER_STATE = {

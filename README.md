@@ -66,10 +66,23 @@ y lo repetís igual para el próximo.
 
 ### 1. Pegá el contenido
 
-En el recuadro de arriba pegá **el link** de la página, o **todo el texto** si preferís.
-También podés arrastrar un archivo `.txt`, `.md` o `.html`.
+En el recuadro podés poner **una o varias cosas a la vez**:
 
-El indicador te avisa qué detectó antes de arrancar.
+- **Uno o más links** (hasta 3): se leen todos y se combinan.
+- **Texto pegado**: tus notas, un review, lo que quieras aportar.
+- **Código HTML**: si copiaste un post o una ficha, también sirve.
+
+Se pueden mezclar sin problema — el primero manda y lo tuyo tiene prioridad:
+
+```
+https://oeksound.com/products/soothe2
+https://www.soundonsound.com/reviews/oeksound-soothe2
+
+Mi aporte: el instalador pesa unos 60 MB y trae más de 2500 presets.
+```
+
+El indicador te avisa qué detectó antes de arrancar (*"2 links + 22 palabras"*), y al
+terminar ves cuántas fuentes se usaron. También podés arrastrar archivos `.txt`, `.md` o `.html`.
 
 ### 2. Apretá «Analizar y completar»
 

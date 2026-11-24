@@ -476,6 +476,144 @@ describe('Análisis (analyze.js)', () => {
 });
 
 /* ============================================================
+   Varias fuentes a la vez
+   ============================================================ */
+describe('Varias fuentes a la vez (extract.js)', () => {
+  const parse = value => {
+    ctx.srcInput = value;
+    return run(`parseSources(srcInput)`);
+  };
+
+  test('separa un link suelto', () => {
+    const r = parse('https://oeksound.com/products/soothe2');
+    equal(r.urls.length, 1);
+    equal(r.text, '');
+    equal(r.isEmpty, false);
+  });
+
+  test('separa varios links', () => {
+    const r = parse('https://oeksound.com/products/soothe2\nhttps://www.soundonsound.com/reviews/soothe2\nhttps://gearspace.com/threads/soothe2');
+    equal(r.urls.length, 3);
+    equal(r.text, '');
+  });
+
+  test('separa link + texto pegado', () => {
+    const r = parse('https://oeksound.com/products/soothe2\n\nSuaviza resonancias sin comerse la vida del track, ideal para voces y platillos.');
+    equal(r.urls.length, 1);
+    includes(r.text, 'Suaviza resonancias');
+  });
+
+  test('separa link + HTML pegado', () => {
+    const r = parse('https://oeksound.com/products/soothe2\n\n<html><body><p>Ficha del plugin con todos sus datos.</p><p>Otro párrafo más largo para que se note.</p></body></html>');
+    equal(r.urls.length, 1);
+    equal(r.isHtml, true, 'debería reconocer el HTML pegado');
+  });
+
+  test('acepta dominios sueltos sin http', () => {
+    const r = parse('oeksound.com/products/soothe2\ngearspace.com/threads/soothe2');
+    equal(r.urls.length, 2);
+    includes(r.urls[0], 'https://oeksound.com');
+  });
+
+  test('un link dentro de una frase no se separa', () => {
+    const r = parse('Miralo acá https://oeksound.com y después me contás qué te pareció.');
+    equal(r.urls.length, 0, 'no debería tomar el link del medio de la frase');
+    includes(r.text, 'Miralo acá');
+  });
+
+  test('no repite un link puesto dos veces', () => {
+    const r = parse('https://oeksound.com/\nhttps://oeksound.com/');
+    equal(r.urls.length, 1);
+  });
+
+  test('detecta que no hay nada', () => {
+    equal(parse('   \n  \n ').isEmpty, true);
+  });
+});
+
+/* ============================================================
+   Prioridad de lo que pegás vos
+   ============================================================ */
+describe('Prioridad del texto pegado', () => {
+  const pagina = [
+    'Sylenth1 es un sintetizador analógico virtual que combina una interfaz clara con un motor de sonido pensado para el productor exigente.',
+    '',
+    'Con 16 notas de polifonía y 512 voces simultáneas, sigue siendo una referencia en estudios de todo el mundo.',
+    '',
+    'Incluye dos filtros analógicos de cuatro etapas con saturación no lineal y control de drive para llevar la resonancia más allá.',
+    '',
+    'Trae cuatro envolventes ADSR por nota, dos LFO con once formas de onda y dieciséis ranuras de modulación asignables a cualquier parámetro.',
+    '',
+    'El motor usa instrucciones SSE para mantener el consumo de CPU bajo incluso con muchas voces sonando al mismo tiempo en el proyecto.'
+  ].join('\n');
+  const nota = 'Dato extra que aporto yo: el instalador pesa alrededor de 60 MB y viene con más de 2500 presets listos para usar en cualquier género.';
+
+  test('sin prioridad, una nota enterrada queda afuera', () => {
+    const post = analyzeWith(`{ text: ${JSON.stringify(pagina + '\n\n' + nota)} }`);
+    notIncludes(post.info.paras, '2500', 'sin ventaja, la nota no debería entrar');
+  });
+
+  test('con prioridad, tu nota entra al post', () => {
+    ctx.nota = nota;
+    const post = analyzeWith(`{ text: ${JSON.stringify(pagina + '\n\n' + nota)}, priorityText: nota }`);
+    includes(post.info.paras, '2500', 'tu aporte debería quedar en algún párrafo');
+  });
+
+  test('si tu nota va primero, abre el post', () => {
+    // Así lo arma la app: el texto pegado va antes que lo leído.
+    const post = analyzeWith(`{ text: ${JSON.stringify(nota + '\n\n' + pagina)} }`);
+    includes(post.info.paras.split('\n\n')[0], '2500', `tu nota debería encabezar: ${post.info.paras.slice(0, 70)}`);
+  });
+
+  test('una frase no se convierte en característica', () => {
+    ctx.nota = nota;
+    const post = analyzeWith(`{ text: ${JSON.stringify(nota + '\n\n' + pagina)} }`);
+    const nombres = post.info.items.map(item => item.name).join(' | ');
+    notIncludes(nombres, 'Dato extra que aporto yo', 'no debería ser el nombre de una característica');
+  });
+});
+
+/* ============================================================
+   Jerga y destacado
+   ============================================================ */
+describe('Jerga moderna y destacado', () => {
+  test('hay variedad de saludos para no repetirse', () => {
+    const saludos = new Set();
+    ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'].forEach(seed => {
+      ctx.seedValue = seed;
+      saludos.add(run(`analyze({ html: htmlFixture, sourceUrl: 'https://www.lennardigital.com/sylenth1/', seed: seedValue, noOpen: true }).info.greet`));
+    });
+    assert(saludos.size >= 5, `debería haber variedad de saludos, hay ${saludos.size}`);
+    const texto = [...saludos].join(' ');
+    matches(texto, /buenas|onda|che|epa|hola|qué hacés/i, `la jerga debería sonar cercana: ${texto.slice(0, 120)}`);
+  });
+
+  test('el destacado no usa nombres de relleno', () => {
+    ctx.roto = run(`normalizePostState({
+      hero: { title: 'Plugin de prueba', sub: 's', img: '', win: '' },
+      info: { win: '', greet: '', paras: 'p', hlTitle: '', hlText: '', listTitle: '', specTitle: '',
+        items: [{ tag: 'X', color: 'azul', name: 'La posta', desc: 'algo' }, { tag: 'FILTROS', color: 'verde', name: 'Filtro de 4 etapas', desc: 'otra cosa' }],
+        specs: [{ k: 'Formatos', v: 'VST3' }] },
+      links: { title: '', text: '', hide: true, btns: [] }
+    })`);
+    const destacado = run(`(() => {
+      const post = roto;
+      const nombres = post.info.items.filter(i => i.name && !NON_FEATURE_NAMES.test(i.name)).map(i => i.name);
+      return nombres.join(' | ');
+    })()`);
+    notIncludes(destacado, 'La posta', 'un relleno no debería pasar el filtro');
+    includes(destacado, 'Filtro de 4 etapas');
+  });
+
+  test('el destacado suma los datos clave', () => {
+    const post = analyzeWith(`{ html: htmlFixture, sourceUrl: 'https://www.lennardigital.com/sylenth1/', seed: 'x' }`);
+    includes(post.info.hlText, '**', 'debería resaltar con negritas');
+    matches(post.info.hlText, /Formatos|Plataformas/, `debería sumar datos clave: ${post.info.hlText}`);
+    assert(post.info.hlText.length <= 240, 'no debería ser eterno');
+  });
+});
+
+/* ============================================================
    Títulos y barras de ventana
    ============================================================ */
 describe('Títulos y barras de ventana', () => {

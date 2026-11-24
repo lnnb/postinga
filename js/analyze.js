@@ -222,11 +222,14 @@ const TYPE_COPY = {
 
 const GREETINGS = {
   taringa: [
-    'Qué hacés, maquinola. Acá tenés toda la data.',
-    'Buenas, taringueros. Arrancamos con algo que vale la pena.',
-    'Epa, comunidad. Hoy hay material para compartir.',
-    'Hola, gente. Tomate un mate que esto tiene info.',
-    'Buenas, buenísimas. Vamos directo al grano.'
+    'Buenas, gente. Hoy les traigo algo que vale la pena.',
+    'Qué onda, taringueros. Arrancamos con todo.',
+    'Buenas, buenísimas. Se viene un aporte de los buenos.',
+    'Epa, comunidad. Prestá atención que esto promete.',
+    'Hola, hola. Te dejo algo que está muy bueno.',
+    'Che, mirá lo que encontré. Va con todo el detalle.',
+    'Buenas. Hoy hay material para el que le gusta esto.',
+    'Qué hacés. Te traigo algo que no tiene desperdicio.'
   ],
   gamer: [
     'Wacho, preparate que esto se pone bueno.',
@@ -243,19 +246,32 @@ const GREETINGS = {
 };
 
 const PARAGRAPH_LEADS = {
-  taringa: ['Hoy te traigo [[{title}]].', 'Vamos con [[{title}]].', 'Te presento [[{title}]].'],
+  taringa: [
+    'Hoy te traigo [[{title}]].',
+    'Vamos con [[{title}]].',
+    'Te presento [[{title}]].',
+    'Arrancamos con [[{title}]].',
+    'Hoy toca [[{title}]].',
+    'Se viene [[{title}]].'
+  ],
   gamer: ['Vamos con [[{title}]].', 'Hoy toca [[{title}]].', 'Arrancamos con [[{title}]].'],
   pro: ['[[{title}]] a fondo.', 'Hoy analizamos [[{title}]].', 'Todo sobre [[{title}]].']
 };
 
 const CTA_PARAGRAPHS = {
-  taringa: ['Abajo te dejo la ficha técnica y los enlaces oficiales.', 'Más abajo está el detalle de las características y los links.', 'Al final tenés los datos técnicos y los enlaces.'],
+  taringa: [
+    'Abajo te dejo la ficha técnica y los enlaces oficiales.',
+    'Más abajo está el detalle de las características y los links.',
+    'Al final tenés todos los datos y los enlaces.',
+    'Abajo está todo: características, datos y links.',
+    'Seguí leyendo que abajo está el detalle completo y los accesos.'
+  ],
   gamer: ['Abajo están los detalles y los links oficiales.', 'Más abajo tenés la ficha y los enlaces.', 'Al final queda todo el detalle y los accesos.'],
   pro: ['A continuación, las características, la ficha técnica y los enlaces oficiales.', 'Más abajo se detallan las especificaciones y los enlaces.', 'Al final encontrarás la ficha técnica y los enlaces.']
 };
 
 const HIGHLIGHT_LEADS = {
-  taringa: ['Lo más destacado:', 'Lo mejor de todo:', 'La posta:'],
+  taringa: ['Lo más destacado:', 'Lo mejor de todo:', 'La posta:', 'Lo que más se destaca:', 'Los puntos fuertes:', 'Lo que hay que saber:'],
   gamer: ['Lo más picante:', 'Los puntos fuertes:', 'Lo mejor:'],
   pro: ['Aspectos destacados:', 'Puntos clave:', 'Lo más relevante:']
 };
@@ -461,7 +477,16 @@ function genericHeading(value) {
   return GENERIC_HEADINGS.has(normalizeCompare(value));
 }
 
-const NON_FEATURE_NAMES = /^(lo mejor|lo peor|en resumen|en conclusi[oó]n|resumen|conclusi[oó]n|nota|ojo|atenci[oó]n|importante|tip|consejo|aviso|record[aá]|aclaraci[oó]n)$/i;
+const NON_FEATURE_NAMES = /^(lo mejor|lo peor|en resumen|en conclusi[oó]n|resumen|conclusi[oó]n|nota|ojo|atenci[oó]n|importante|tip|consejo|aviso|record[aá]|aclaraci[oó]n|la posta|la data|el dato|lo bueno|lo malo|dato extra|dato de color)$/i;
+
+/* Nombres que en realidad son una frase entera, no una etiqueta de característica. */
+function looksLikeSentence(name) {
+  const text = cleanSpace(name);
+  if (!text) return true;
+  if (/\b(que|como|cual|cuando|donde|porque|aunque|mientras)\b/i.test(text)) return true;
+  if (/^(url source|title|published time|markdown content|image \d+)/i.test(text)) return true;
+  return wordCount(text) > 5;
+}
 
 // Valores que delatan una ficha técnica y no una característica redactada.
 function looksLikeSpecValue(value) {
@@ -553,7 +578,7 @@ function buildBlocks(text) {
       const name = cleanName(rawName);
       const desc = cleanDescription(rawDesc);
       const wordsInName = wordCount(name);
-      if (name && desc && wordsInName <= 8 && name.length <= 48 && !NON_FEATURE_NAMES.test(name) && !genericHeading(name) && !looksLikeSpecValue(rawDesc)) {
+      if (name && desc && wordsInName <= 8 && name.length <= 48 && !NON_FEATURE_NAMES.test(name) && !genericHeading(name) && !looksLikeSentence(name) && !looksLikeSpecValue(rawDesc)) {
         blocks.push({ type: 'feature', name, desc, text: `${name}: ${desc}`, raw: rawLine });
         previous = null;
         continue;
@@ -1584,8 +1609,10 @@ function extractLinks({ text, meta, sourceUrl, type, maxButtons }) {
 /* ============================================================
    Párrafos y copy
    ============================================================ */
-function pickParagraphs(blocks, title, type, maxParagraphs) {
+function pickParagraphs(blocks, title, type, maxParagraphs, priorityText = '') {
   const titleNorm = normalizeCompare(title);
+  // Lo que pegaste a mano tiene ventaja: es tu aporte, no el de la página.
+  const priorityNorm = priorityText ? normalizeCompare(priorityText) : '';
   const scored = [];
 
   blocks.forEach((block, index) => {
@@ -1610,6 +1637,10 @@ function pickParagraphs(blocks, title, type, maxParagraphs) {
     if (normalizeCompare(text).includes(titleNorm)) score += 20;
     if (/\b(\d+%|\d{2,4}\s*(?:GB|MB|Hz|bits?|voces?|presets?)|precio|gratis|gratuito)\b/i.test(text)) score += 5;
     if (index < 3) score += 6;
+    if (priorityNorm) {
+      const key = normalizeCompare(text).slice(0, 120);
+      if (key.length > 30 && priorityNorm.includes(key)) score += 50;
+    }
     if (text.length < 100) score -= 8;
     if (type === 'movie' && /spoiler|final alternativo|muere|termina/i.test(text)) score -= 16;
     scored.push({ text, score, index });
@@ -1766,21 +1797,35 @@ function composePost(data) {
   const highlightTitleBase = pickSeeded(copy.highlight, seed + ':hl');
   const hlTitle = question(highlightTitleBase, noOpen);
 
+  // El destacado se arma solo con lo que aporta: nombres con sustancia y datos clave.
+  const nombreUtil = item => Boolean(item.name)
+    && item.name.length >= 4
+    && !NON_FEATURE_NAMES.test(item.name)
+    && !isSectionLabel(item.name);
+  const destacados = items.filter(nombreUtil);
+  const datosClave = specs.filter(spec => ['Formatos', 'Plataformas', 'Precio', 'Versión', 'Desarrollador'].includes(spec.k));
+  const lead = pickSeeded(HIGHLIGHT_LEADS[tone] || HIGHLIGHT_LEADS.taringa, seed + ':hltext');
+
   let hlText = '';
-  if (items.length) {
-    const lead = pickSeeded(HIGHLIGHT_LEADS[tone] || HIGHLIGHT_LEADS.taringa, seed + ':hltext');
-    const names = items.slice(0, 3).map(item => `**${item.name || item.tag}**`);
+  if (destacados.length) {
+    const names = destacados.slice(0, 3).map(item => `**${item.name}**`);
     hlText = `${lead} ${joinNatural(names)}.`;
-    const extra = specs.find(spec => spec.k === 'Plataformas' || spec.k === 'Formatos');
-    if (extra && hlText.length < 170) hlText += ` También: **${extra.k}:** ${extra.v}.`;
+  } else if (datosClave.length) {
+    hlText = `${lead} ${datosClave.slice(0, 3).map(spec => `**${spec.k}:** ${spec.v}`).join(' · ')}.`;
+  } else if (items.length) {
+    const names = items.slice(0, 2).map(item => `**${item.name || item.tag}**`);
+    hlText = `${lead} ${joinNatural(names)}.`;
   } else if (specs.length) {
-    const lead = pickSeeded(HIGHLIGHT_LEADS[tone] || HIGHLIGHT_LEADS.taringa, seed + ':hltext');
-    hlText = lead + ' ' + specs.slice(0, 2).map(spec => `**${spec.k}:** ${spec.v}`).join(' · ');
+    hlText = `${lead} ${specs.slice(0, 2).map(spec => `**${spec.k}:** ${spec.v}`).join(' · ')}.`;
   } else if (description) {
     hlText = `**${title}**: ${description}`;
   } else {
     hlText = `Todo lo esencial de **${title}** en un solo lugar.`;
   }
+
+  // Un dato más, si todavía entra sin que el destacado se haga eterno.
+  const datoExtra = datosClave.find(spec => !hlText.includes(`**${spec.k}:**`));
+  if (datoExtra && hlText.length < 150) hlText += ` También: **${datoExtra.k}:** ${datoExtra.v}.`;
   hlText = balanceMarkers(clipAtBoundary(hlText.replace(/\s+/g, ' ').trim(), 225, '…'));
 
   const hasDownload = buttons.some(button => /descargar|download|demo|trial|prueba/i.test(button.label) || FILE_EXT.test(button.url));
@@ -1976,7 +2021,8 @@ function analyze(input, options = {}) {
     noOpen: pick('noOpen'),
     seed: pick('seed'),
     sourceUrl: provided.sourceUrl || provided.url || inline.sourceUrl || inline.url || '',
-    provider: pick('provider')
+    provider: pick('provider'),
+    priorityText: pick('priorityText')
   };
   const tone = ['taringa', 'gamer', 'pro'].includes(opts.tone) ? opts.tone : 'taringa';
   const depth = opts.depth === 'rapido' ? 'rapido' : 'completo';
@@ -2015,7 +2061,7 @@ function analyze(input, options = {}) {
   const items = extractFeatures(blocks, maxItems);
   const specs = extractSpecs({ text, blocks, meta, sourceUrl, type, maxSpecs });
   const buttons = extractLinks({ text, meta, sourceUrl, type, maxButtons });
-  const paragraphs = pickParagraphs(blocks, title, type, maxParagraphs);
+  const paragraphs = pickParagraphs(blocks, title, type, maxParagraphs, opts.priorityText || '');
   const seed = String(opts.seed || `${title}|${sourceUrl}|${Date.now() % 100000}`);
 
   const post = composePost({

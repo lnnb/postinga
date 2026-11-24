@@ -114,6 +114,33 @@ de CSS externo. Un separador vacío deja una línea simple.
 
 ---
 
+## Varias fuentes a la vez
+
+`parseSources()` (en `js/extract.js`) parte lo que haya en el recuadro:
+
+- Las líneas que son **solo un link** (o solo un dominio) se separan para leerlas.
+- El resto queda como texto pegado, que puede ser texto plano **o HTML**.
+- Un link en medio de una frase **no** se separa: queda como parte del texto.
+
+`gatherSources()` (en `js/app.js`) lee hasta 3 links, y después combina todo:
+
+| Qué | Cómo se combina |
+| --- | --- |
+| Metadatos | Manda el **primer link**; los demás completan lo que falte (`mergeMeta`) |
+| Texto | Primero **lo que pegaste vos**, después lo leído de cada link |
+| HTML pegado | Se convierte a texto y sus metadatos se suman a los del primer link |
+| Links que fallan | Se informan en el resumen; si ninguno se pudo leer, se avisa |
+
+El resultado va a `analyze()` como `{ text, meta }` —sin `html`— para que el analizador
+use el texto ya combinado en vez de volver a convertir un documento.
+
+**Prioridad de lo tuyo:** lo pegado va primero en el texto, así que encabeza el post. Además
+se pasa como `priorityText`, que le da +50 de puntaje en `pickParagraphs` para que entre
+aunque compita con párrafos más largos de las páginas. Los párrafos se devuelven en orden
+del documento (por coherencia), así que la ventaja garantiza que entre, no que sea el primero.
+
+---
+
 ## Cómo se elige el título
 
 Es la parte más delicada, porque de ahí salen el `<h2>` de la portada, el `alt` de la imagen y
@@ -182,6 +209,22 @@ material fuente, y devuelve un JSON que se valida campo por campo.
 **Regla clave:** la IA no puede inventar URLs. Los enlaces que devuelve se comparan contra los
 que el motor local encontró en la fuente; cualquier enlace o imagen desconocida se descarta.
 Si la IA falla, el post se completa igual con el motor local.
+
+---
+
+## Jerga y tono
+
+Los bancos de frases viven en `js/analyze.js`: `GREETINGS`, `PARAGRAPH_LEADS`,
+`CTA_PARAGRAPHS` y `HIGHLIGHT_LEADS`. Cada uno tiene varias opciones y se elige una
+con `pickSeeded` a partir de la semilla del post, así que dos análisis del mismo
+contenido no salen idénticos.
+
+El tono `taringa` usa jerga argentina actual y cercana ("Buenas, buenísimas", "Prestá
+atención que esto promete", "Lo mejor de todo"). `gamer` y `pro` tienen sus propios bancos.
+
+El **destacado** se arma solo con contenido útil: se descartan los nombres de relleno
+(`NON_FEATURE_NAMES`) y las etiquetas de sección, y se le suman los datos clave
+(formatos, plataformas, precio, versión) si entran sin que quede eterno.
 
 ---
 
