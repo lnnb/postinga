@@ -114,6 +114,47 @@ de CSS externo. Un separador vacío deja una línea simple.
 
 ---
 
+## Cómo se elige el título
+
+Es la parte más delicada, porque de ahí salen el `<h2>` de la portada, el `alt` de la imagen y
+las dos barras de ventana. En orden de prioridad:
+
+1. `og:title` / `<title>` / JSON-LD / `h1`, limpiando el nombre del sitio.
+2. La primera línea corta del texto (útil al pegar texto a mano).
+3. El nombre deducido del cuerpo: `"Te presento soothe2 de oeksound"` → **oeksound soothe2**, o
+   nombres con versión (`Sylenth1`, `Serum 2`).
+4. El primer encabezado o párrafo que sirva.
+
+Antes de aceptar cualquier candidato se descartan (`isBadTitle`):
+
+- **Etiquetas de sección** (`isSectionLabel`): `👋 Bienvenidos`, `i️ Información`,
+  `📥 Links de Descarga`, `Características principales`… Tampoco vale el emoji degradado a una
+  letra suelta (`i️` → `i`).
+- **Restos de las ventanas del propio post** (`isWindowArtifact`): `X — Vista previa`,
+  `Información de X.rtf`, cualquier cosa terminada en `.rtf`/`.txt`.
+
+Esto evita el caso típico de pegar el HTML de un post ya generado: sin el filtro, el separador
+terminaba siendo el título del post nuevo.
+
+Las barras de ventana se arman con ese título:
+
+| Ventana | Texto |
+| --- | --- |
+| Portada | `<título> — Vista previa` |
+| Información | `<prefijo según tipo> <título>.rtf` |
+
+El prefijo de la ventana de información cambia con el tipo detectado: *Información de* (software),
+*Guía de* (juegos y tutoriales), *Ficha de* (películas, música, libros, hardware), *Resumen de*
+(noticias).
+
+### Páginas que se arman con JavaScript
+
+Si el HTML descargado deja muy poco texto (menos de 220 caracteres), `analyze` lanza un error con
+`code: 'JS_RENDERED'` y `retryWithText: true`, y la app ofrece pegar el texto a mano en vez de
+generar un post con el encabezado del sitio.
+
+---
+
 ## Motores de análisis
 
 | Motor | Requiere | Módulo |

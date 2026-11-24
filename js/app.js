@@ -49,8 +49,8 @@ const DEFAULT_PREFS = {
   geminiModel: 'gemini-2.5-flash',
   openaiBase: 'https://api.openai.com/v1',
   openaiModel: 'gpt-4o-mini',
-  targetName: 'Taringa!',
-  targetUrl: 'https://www.taringa.net',
+  targetName: 'Taringas!',
+  targetUrl: 'https://taringas.net',
   sidebarCollapsed: false
 };
 

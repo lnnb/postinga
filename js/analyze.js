@@ -584,6 +584,56 @@ function onlyContinuation(previousRaw, nextRaw) {
 /* ============================================================
    Título, descripción, imágenes
    ============================================================ */
+/* Palabras que son títulos de sección, nunca el título del post. */
+const SEPARATOR_WORDS = new Set([
+  'bienvenidos', 'bienvenidas', 'bienvenido', 'bienvenida',
+  'informacion', 'informacion general',
+  'links de descarga', 'link de descarga', 'descarga', 'descargas',
+  'requisitos', 'caracteristicas', 'caracteristicas principales',
+  'especificaciones', 'detalles', 'ficha tecnica', 'enlaces',
+  'links', 'recursos', 'contenido', 'introduccion', 'presentacion',
+  'empezamos', 'comenzamos', 'a continuacion', 'resumen',
+  'instalacion', 'como se usa', 'como funciona', 'notas'
+]);
+
+function stripSymbols(value) {
+  return String(value ?? '')
+    .replace(/[\p{Extended_Pictographic}\uFE0F\u200D\u20E3]/gu, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** ¿Es una etiqueta de sección? ("👋 Bienvenidos", "i️ Información", "Links de Descarga") */
+function isSectionLabel(value) {
+  const text = normalizeCompare(stripSymbols(value));
+  if (!text || text.length <= 2) return true;
+  if (SEPARATOR_WORDS.has(text)) return true;
+  const words = text.split(' ');
+
+  // "i️ Información": el emoji ℹ️ suele quedar como una letra suelta adelante.
+  if (words.length === 2 && words[0].length <= 1 && SEPARATOR_WORDS.has(words[1])) return true;
+
+  // "⚙️ Requisitos y compatibilidad", "Características principales"
+  if (SEPARATOR_WORDS.has(words[0]) && text.length <= 30) return true;
+
+  return false;
+}
+
+/** ¿Es un resto de las barras de ventana del propio post? ("X — Vista previa", "Información de X.rtf") */
+function isWindowArtifact(value) {
+  const text = cleanSpace(value);
+  if (!text) return true;
+  if (/(?:—|–|-)\s*vista\s*previa\s*$/i.test(text)) return true;
+  if (/\.(?:rtf|txt|docx?|pages)$/i.test(text)) return true;
+  if (/^(?:informaci[oó]n|ficha|gu[ií]a|resumen|detalles|especificaciones)\s+de\s+.+/i.test(text)) return true;
+  return false;
+}
+
+function isBadTitle(value) {
+  return badTitle(value) || isSectionLabel(value) || isWindowArtifact(value);
+}
+
 function badTitle(value) {
   const text = String(value ?? '').trim();
   if (!text || text.length < 2) return true;
@@ -652,7 +702,7 @@ function pickTitle(meta, blocks, sourceUrl) {
   const candidates = [];
   const push = (value, score) => {
     const cleaned = cleanTitle(value, meta.siteName || '', sourceUrl);
-    if (cleaned && !badTitle(cleaned)) candidates.push({ value: cleaned, score });
+    if (cleaned && !isBadTitle(cleaned)) candidates.push({ value: cleaned, score });
   };
 
   if (meta.ogTitle) push(meta.ogTitle, 140);
@@ -678,20 +728,72 @@ function pickTitle(meta, blocks, sourceUrl) {
     push(firstBlock.text, 100);
   }
 
+  // Antes de rendirse con los comodines, se intenta deducir el producto del cuerpo.
   if (!candidates.length) {
-    const firstHeading = blocks.find(block => block.type === 'heading' && block.text.length >= 6 && block.text.length <= 100 && !genericHeading(block.text));
+    const guessed = guessNameFromBlocks(blocks);
+    if (guessed) push(guessed, 80);
+  }
+
+  if (!candidates.length) {
+    const firstHeading = blocks.find(block => block.type === 'heading' && block.text.length >= 6 && block.text.length <= 100 && !genericHeading(block.text) && !isBadTitle(block.text));
     if (firstHeading) push(firstHeading.text, 75);
   }
 
   if (!candidates.length) {
     const firstParagraph = blocks.find(block => block.type === 'paragraph' && block.text.length >= 6 && block.text.length <= 110);
-    if (firstParagraph && !/^https?:/i.test(firstParagraph.text)) {
+    if (firstParagraph && !/^https?:/i.test(firstParagraph.text) && !isBadTitle(firstParagraph.text)) {
       push(firstParagraph.text.replace(/[.!?…]+$/, ''), /[.!?…]$/.test(firstParagraph.text) ? 42 : 55);
     }
   }
 
   candidates.sort((a, b) => b.score - a.score);
   return candidates.length ? candidates[0].value : fallbackTitle(sourceUrl);
+}
+
+/**
+ * Último recurso para el título: deduce el nombre del producto desde el cuerpo.
+ * Reconoce "Te presento soothe2 de oeksound" y nombres con versión (Sylenth1, Serum 2).
+ */
+function guessNameFromBlocks(blocks) {
+  const NOISE = /^(windows|win|macos|mac|osx|linux|android|ios|vst|vst2|vst3|vsti|aax|au|clap|bit|bits|gb|mb|tb|khz|hz|ghz|core|ryzen|intel|amd|apple|silicon|m1|m2|m3|pro|max|ultra|native|universal|demo|trial|full|free|https?)$/i;
+  const paragraphs = blocks
+    .filter(block => block.type === 'paragraph' && block.text.length > 40)
+    .slice(0, 5)
+    .map(block => block.text.replace(/\s+/g, ' ').trim());
+  if (!paragraphs.length) return '';
+
+  const tidy = value => cleanName(String(value ?? '').replace(/^[\s,.;:–—-]+|[\s,.;:–—-]+$/g, ''));
+
+  // "Te presento soothe2 de oeksound" → "oeksound soothe2"
+  const STOP_WORD = /^(la|el|los|las|un|una|unos|unas|este|esta|estos|estas|nuevo|nueva|nuestro|nuestra|gran|mejor|peor|mismo|misma|toda|todo)$/i;
+  const looksLikeName = value => Boolean(value)
+    && value.length >= 2 && value.length <= 28
+    && !NOISE.test(value)
+    && !isSectionLabel(value)
+    && !STOP_WORD.test(String(value).split(/\s+/)[0]);
+
+  for (const text of paragraphs) {
+    const match = text.match(/\b(?:te traigo|te presento|les traigo|les presento|vamos con|repaso (?:completo )?(?:por|de)|analizamos|probamos|hablamos de)\s+([\p{L}\p{N}][\p{L}\p{N}.+'’-]*(?:\s+[\p{L}\p{N}][\p{L}\p{N}.+'’-]*){0,3})/iu);
+    if (!match) continue;
+    const parts = match[1].split(/\s+de\s+/i).map(tidy).filter(Boolean);
+    const validos = parts.filter(looksLikeName);
+    if (validos.length >= 2) {
+      const juntos = `${validos[1]} ${validos[0]}`;
+      if (juntos.length <= 60) return juntos;
+    }
+    if (validos.length) return validos[0];
+  }
+
+  // Nombres con número de versión: soothe2, Sylenth1, Serum 2
+  for (const text of paragraphs) {
+    const matches = text.match(/\b[\p{Lu}\p{L}][\p{L}]{2,}\s?\d+(?:\.\d+)?\b/gu) || [];
+    for (const raw of matches) {
+      const candidate = tidy(raw);
+      if (candidate && candidate.length >= 4 && !NOISE.test(candidate) && !isSectionLabel(candidate)) return candidate;
+    }
+  }
+
+  return '';
 }
 
 function sentenceFromParagraph(paragraph, max = 200) {
@@ -1652,7 +1754,18 @@ function composePost(data) {
   const linksTitleBase = hasDownload ? pickSeeded(copy.cta, seed + ':cta-title') : (isPro ? 'Enlaces y fuente oficial' : 'Sitio oficial y más info');
   const linksText = pickSeeded(copy.ctaText, seed + ':cta-text');
 
-  const infoTitle = shortTitle ? `Información de ${shortTitle}.rtf` : 'Información del post.rtf';
+  const infoPrefix = {
+    software: 'Información de',
+    game: 'Guía de',
+    movie: 'Ficha de',
+    music: 'Ficha de',
+    book: 'Ficha de',
+    hardware: 'Ficha de',
+    tutorial: 'Guía de',
+    news: 'Resumen de',
+    generic: 'Información de'
+  }[type] || 'Información de';
+  const infoTitle = shortTitle ? `${infoPrefix} ${shortTitle}.rtf` : 'Información del post.rtf';
   const heroWin = `${clipAtBoundary(title, 66, '…')} — Vista previa`;
 
   const paras = composeParagraphs({
@@ -1857,6 +1970,15 @@ function analyze(input, options = {}) {
   text = String(text || '').replace(/\r\n?/g, '\n').trim();
   if (text.length < 40 && !meta.title) {
     throw new Error('No hay suficiente contenido para analizar. Pegá el texto completo o un enlace con más información.');
+  }
+
+  // Muchos sitios modernos arman el contenido con JavaScript: el lector recibe
+  // solo el esqueleto y el resultado sería el encabezado del sitio, no el post.
+  if (prepared.html && text.length < 220) {
+    const error = new Error('Esa página carga el contenido con JavaScript, así que el lector solo recibe la estructura del sitio. Abrí el post en el navegador, seleccioná el texto y pegalo acá.');
+    error.code = 'JS_RENDERED';
+    error.retryWithText = true;
+    throw error;
   }
 
   const blocks = buildBlocks(text);

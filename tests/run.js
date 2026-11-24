@@ -476,6 +476,90 @@ describe('Análisis (analyze.js)', () => {
 });
 
 /* ============================================================
+   Títulos y barras de ventana
+   ============================================================ */
+describe('Títulos y barras de ventana', () => {
+  // Un post ya generado cuyo título quedó siendo el texto del separador.
+  ctx.postRoto = run(`build(normalizePostState(Object.assign({}, DEF, {
+    hero: { win: '👋 Bienvenidos — Vista previa', img: 'https://oeksound.com/_astro/soothe2.webp', title: '👋 Bienvenidos', sub: 'Supresor dinámico de resonancias en tiempo real.' },
+    info: Object.assign({}, DEF.info, {
+      win: 'Información de 👋 Bienvenidos.rtf',
+      paras: 'Hoy te traigo [[👋 Bienvenidos]]. Te presento soothe2 de oeksound , uno de los procesadores más elegidos en estudios de mezcla y mastering cuando hace falta limpiar el audio sin sacarle vida.'
+    })
+  })))`);
+
+  test('una etiqueta de sección nunca queda como título', () => {
+    const post = analyzeWith(`{ html: postRoto, noOpen: true }`);
+    notIncludes(post.hero.title, 'Bienvenidos', 'el título no puede ser el separador');
+    notIncludes(post.hero.win, 'Bienvenidos');
+    notIncludes(post.info.win, 'Bienvenidos');
+  });
+
+  test('reconoce las etiquetas de las secciones clásicas', () => {
+    ['👋 Bienvenidos', 'i️ Información', '📥 Links de Descarga', '⚙️ Requisitos y compatibilidad', 'Características principales', 'Ficha técnica']
+      .forEach(label => {
+        equal(run(`isSectionLabel(${JSON.stringify(label)})`), true, `debería reconocer "${label}"`);
+      });
+    equal(run(`isSectionLabel('oeksound soothe2')`), false, 'un nombre real no es una etiqueta');
+    equal(run(`isSectionLabel('LennarDigital Sylenth1')`), false);
+  });
+
+  test('reconoce los restos de las barras de ventana', () => {
+    ['👋 Bienvenidos — Vista previa', 'Información de soothe2.rtf', 'Ficha de Sylenth1.rtf', 'resumen.txt']
+      .forEach(label => {
+        equal(run(`isWindowArtifact(${JSON.stringify(label)})`), true, `debería reconocer "${label}"`);
+      });
+    equal(run(`isWindowArtifact('oeksound soothe2')`), false);
+  });
+
+  test('deduce el nombre del producto desde el cuerpo', () => {
+    const post = analyzeWith(`{ html: postRoto, noOpen: true }`);
+    includes(post.hero.title.toLowerCase(), 'soothe2', `debería encontrar el producto: ${post.hero.title}`);
+  });
+
+  test('la barra de la portada usa el producto detectado', () => {
+    const post = analyzeWith(`{ html: postRoto, noOpen: true }`);
+    includes(post.hero.win, 'Vista previa', 'debería seguir siendo una vista previa');
+    notIncludes(post.hero.win, 'Bienvenidos', 'no debería repetir el separador');
+  });
+
+  test('la barra de información cambia según el tipo de contenido', () => {
+    const software = analyzeWith(`{ html: htmlFixture, sourceUrl: 'https://www.lennardigital.com/sylenth1/' }`);
+    matches(software.info.win, /^Información de /, `software: ${software.info.win}`);
+    const juego = analyzeWith(`{ text: jinaFixture, sourceUrl: 'https://ejemplo.com/celeste' }`);
+    matches(juego.info.win, /^Guía de /, `juego: ${juego.info.win}`);
+  });
+
+  test('los nombres con versión también sirven de título', () => {
+    const texto = [
+      'Sylenth1 es un sintetizador analógico virtual que combina una interfaz clara con un motor de sonido pensado para el productor exigente.',
+      '',
+      'Con 16 notas de polifonía y 512 voces simultáneas, sigue siendo una referencia en estudios de todo el mundo.'
+    ].join('\n');
+    const post = analyzeWith(`{ text: ${JSON.stringify(texto)} }`);
+    includes(post.hero.title.toLowerCase(), 'sylenth1', `debería detectar Sylenth1: ${post.hero.title}`);
+  });
+
+  test('una página armada con JavaScript avisa en vez de inventar un post', () => {
+    let capturado = null;
+    try {
+      run(`analyze({ html: '<html><head><title>Mi sitio</title></head><body><div id="app"></div></body></html>' })`);
+    } catch (error) {
+      capturado = { message: error.message, code: error.code, retry: error.retryWithText };
+    }
+    assert(capturado, 'debería lanzar un error');
+    equal(capturado.code, 'JS_RENDERED');
+    equal(capturado.retry, true, 'debería ofrecer pegar el texto a mano');
+    matches(capturado.message, /JavaScript/i, 'debería explicar el motivo');
+  });
+
+  test('el texto pegado a mano sigue funcionando igual', () => {
+    const post = analyzeWith(`{ text: jinaFixture, sourceUrl: 'https://ejemplo.com/celeste' }`);
+    assert(post.info.items.length >= 3, 'debería seguir extrayendo características');
+  });
+});
+
+/* ============================================================
    Generador
    ============================================================ */
 describe('Generador (generator.js)', () => {
